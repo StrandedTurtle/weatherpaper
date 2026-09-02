@@ -1,0 +1,360 @@
+<title>Forest Wallpaper Lab</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+  /* Committed single-theme design: this tool exists to judge dark pixel art,
+     so a light ground would fight the content. Every colour is explicit. */
+  :root {
+    --ground:   #0B1310;
+    --panel:    #111C16;
+    --panel-2:  #16241C;
+    --line:     #20302A;
+    --text:     #C6D4C9;
+    --muted:    #778C80;
+    --dim:      #4E6157;
+    --accent:   #5FA86B;
+    --warm:     #D8A85E;
+    --cold:     #7FA8C0;
+    --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+    --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--ground); color: var(--text);
+    font-family: var(--sans); font-size: 14px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 56px; }
+
+  header { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; margin-bottom: 6px; }
+  h1 { font-size: 19px; font-weight: 600; margin: 0; letter-spacing: -0.01em; }
+  .sub { color: var(--muted); font-size: 13px; margin: 0 0 24px; max-width: 68ch; }
+  .tag {
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.09em;
+    color: var(--accent); border: 1px solid var(--line); border-radius: 3px; padding: 2px 7px;
+  }
+
+  .lab { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 26px; align-items: start; }
+  @media (max-width: 880px) { .lab { grid-template-columns: 1fr; } }
+
+  /* ---- stage ---- */
+  .stage {
+    background: var(--panel); border: 1px solid var(--line); border-radius: 6px;
+    padding: 22px; display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  canvas {
+    display: block; image-rendering: pixelated; border-radius: 3px;
+    box-shadow: 0 14px 40px rgba(0,0,0,.55); cursor: grab; touch-action: none;
+    max-width: 100%; height: auto;
+  }
+  canvas:active { cursor: grabbing; }
+  .hint { font-size: 12px; color: var(--dim); text-align: center; }
+
+  .readout {
+    width: 100%; display: grid; grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 4px; overflow: hidden;
+  }
+  .readout div { background: var(--panel-2); padding: 8px 10px; }
+  .readout dt { font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--dim); margin: 0 0 2px; }
+  .readout dd { margin: 0; font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--text); }
+  .loop-idle { color: var(--dim); }
+  .loop-run  { color: var(--accent); }
+
+  /* ---- controls ---- */
+  .rail { display: flex; flex-direction: column; gap: 14px; }
+  fieldset { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 14px 15px 16px; margin: 0; }
+  legend {
+    font-family: var(--mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted); padding: 0 6px; margin-left: -6px;
+  }
+  .row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 11px; }
+  .row:first-of-type { margin-top: 4px; }
+  .row label { font-size: 13px; color: var(--text); }
+  .val { font-family: var(--mono); font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 20px; background: transparent; margin: 0; }
+  input[type=range]::-webkit-slider-runnable-track { height: 3px; background: var(--line); border-radius: 2px; }
+  input[type=range]::-moz-range-track { height: 3px; background: var(--line); border-radius: 2px; }
+  input[type=range]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%;
+    background: var(--accent); margin-top: -5px; border: none; cursor: pointer;
+  }
+  input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--accent); border: none; cursor: pointer; }
+  input[type=range]:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 3px; }
+
+  select, button {
+    font-family: var(--sans); font-size: 13px; color: var(--text);
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 4px; padding: 5px 9px; cursor: pointer;
+  }
+  select:focus-visible, button:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  button:hover, select:hover { border-color: var(--dim); }
+  button[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: #08130C; font-weight: 600; }
+
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-top: 6px; }
+  .checks label { display: flex; align-items: center; gap: 7px; font-size: 13px; cursor: pointer; }
+  input[type=checkbox] { accent-color: var(--accent); width: 14px; height: 14px; cursor: pointer; }
+
+  .presets { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 4px; }
+  .presets button { font-size: 12px; padding: 4px 9px; }
+
+  .stepper { display: flex; align-items: center; gap: 6px; }
+  .stepper button { width: 26px; padding: 3px 0; text-align: center; font-family: var(--mono); }
+
+  footer { margin-top: 26px; color: var(--dim); font-size: 12px; border-top: 1px solid var(--line); padding-top: 14px; }
+  footer code { font-family: var(--mono); color: var(--muted); }
+  @media (prefers-reduced-motion: reduce) { canvas { transition: none; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Forest Wallpaper Lab</h1>
+    <span class="tag">scene.json preview</span>
+  </header>
+  <p class="sub">
+    Every state the Android live wallpaper can be in, driven by the same <code>scene.json</code> and the
+    same rendering maths that ship in the app. Change anything here and the change lands in the APK
+    unaltered &mdash; this is the art review surface, not a mock-up.
+  </p>
+
+  <div class="lab">
+    <div class="stage">
+      <canvas id="cv" width="156" height="338" aria-label="Live preview of the pixel-art forest wallpaper"></canvas>
+      <p class="hint">Drag on the scene to reposition the home-screen readout.</p>
+      <dl class="readout">
+        <div><dt>Sun altitude</dt><dd id="r-alt">&mdash;</dd></div>
+        <div><dt>WMO code</dt><dd id="r-wmo">&mdash;</dd></div>
+        <div><dt>Virtual canvas</dt><dd id="r-size">&mdash;</dd></div>
+        <div><dt>Render loop</dt><dd id="r-loop">&mdash;</dd></div>
+      </dl>
+    </div>
+
+    <div class="rail">
+      <fieldset>
+        <legend>Presets</legend>
+        <div class="presets" id="presets"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Time</legend>
+        <div class="row"><label for="hour">Local time</label><span class="val" id="v-hour"></span></div>
+        <input type="range" id="hour" min="0" max="23.983" step="0.0167" value="14.53">
+        <div class="row"><label for="sunrise">Sunrise</label><span class="val" id="v-sunrise"></span></div>
+        <input type="range" id="sunrise" min="3" max="9" step="0.05" value="6.2">
+        <div class="row"><label for="sunset">Sunset</label><span class="val" id="v-sunset"></span></div>
+        <input type="range" id="sunset" min="15" max="22" step="0.05" value="19.8">
+        <div class="row"><label for="anim">Animate</label>
+          <button id="anim" aria-pressed="true">Playing</button></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Weather</legend>
+        <div class="row"><label for="cloud">Cloud cover</label><span class="val" id="v-cloud"></span></div>
+        <input type="range" id="cloud" min="0" max="1" step="0.01" value="0.35">
+        <div class="row"><label for="wind">Wind</label><span class="val" id="v-wind"></span></div>
+        <input type="range" id="wind" min="0" max="1" step="0.01" value="0.2">
+        <div class="row"><label for="temp">Temperature</label><span class="val" id="v-temp"></span></div>
+        <input type="range" id="temp" min="-15" max="40" step="1" value="12">
+        <div class="row"><label for="precip">Precipitation</label>
+          <select id="precip">
+            <option value="none">None</option>
+            <option value="drizzle">Drizzle</option>
+            <option value="rain">Rain</option>
+            <option value="heavy_rain">Heavy rain</option>
+            <option value="snow">Snow</option>
+          </select></div>
+        <div class="row"><label for="cond">Sky</label>
+          <select id="cond">
+            <option value="auto">From cloud cover</option>
+            <option value="fog">Fog</option>
+          </select></div>
+        <div class="row"><label for="thunder">Thunderstorm</label>
+          <button id="thunder" aria-pressed="false">Off</button></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Season</legend>
+        <div class="row"><label for="season">Foliage</label>
+          <select id="season">
+            <option value="spring">Spring</option>
+            <option value="summer" selected>Summer</option>
+            <option value="autumn">Autumn</option>
+            <option value="winter">Winter</option>
+          </select></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Home-screen readout</legend>
+        <div class="checks">
+          <label><input type="checkbox" id="ov-clock" checked> Clock</label>
+          <label><input type="checkbox" id="ov-temp" checked> Temperature</label>
+          <label><input type="checkbox" id="ov-cond"> Condition</label>
+          <label><input type="checkbox" id="ov-place"> Location</label>
+        </div>
+        <div class="row"><label for="ov-size">Size</label>
+          <span class="stepper">
+            <button id="size-down" aria-label="Decrease readout size">&minus;</button>
+            <span class="val" id="v-size">2&times;</span>
+            <button id="size-up" aria-label="Increase readout size">+</button>
+          </span></div>
+        <div class="row"><label for="locked">Lock screen</label>
+          <button id="locked" aria-pressed="false">Unlocked</button></div>
+      </fieldset>
+    </div>
+  </div>
+
+  <footer>
+    Rendered from <code>art/scene.json</code> by the same passes the app runs:
+    <code>Sky &rarr; Forest &rarr; Pool &rarr; Weather &rarr; Overlay</code>.
+    On device the first passes are cached bitmaps rebuilt only when the state changes.
+    Weather data by Open-Meteo.com (CC BY 4.0).
+  </footer>
+</div>
+
+<script>/*__MODULES__*/</script>
+<script>
+(function () {
+  'use strict';
+  var SPEC = /*__SPEC__*/;
+  var C = window.WeatherPaperCompose, O = window.WeatherPaperOverlay;
+
+  var cv = document.getElementById('cv'), g = cv.getContext('2d');
+  var img = g.createImageData(cv.width, cv.height);
+  var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  var st = { hour: 14.53, sunrise: 6.2, sunset: 19.8, cloud: 0.35, wind: 0.2, tempC: 12,
+             precip: 'none', condition: 'auto', season: 'summer', thunder: false,
+             place: 'Brighton', date: new Date() };
+  var ov = { enabled: true, showClock: true, showTemp: true, showCondition: false,
+             showLocation: false, x: 0.5, y: 0.30, size: 2 };
+  var locked = false, playing = !reduced, t0 = performance.now(), t = 0;
+
+  function $(id) { return document.getElementById(id); }
+  function hhmm(v) {
+    var h = Math.floor(v) % 24, m = Math.floor((v - Math.floor(v)) * 60);
+    return String(h).padStart(2, '0') + ':' + String(m).padStart(2, '0');
+  }
+
+  /* Reverse of the app's WMO mapping - shown so the preview state is traceable to real data. */
+  function wmo(s) {
+    if (s.thunder) return '95 thunderstorm';
+    if (s.condition === 'fog') return '45 fog';
+    if (s.precip === 'drizzle') return '53 drizzle';
+    if (s.precip === 'rain') return '63 rain';
+    if (s.precip === 'heavy_rain') return '65 heavy rain';
+    if (s.precip === 'snow') return '73 snow';
+    if (s.cloud > 0.85) return '3 overcast';
+    if (s.cloud > 0.35) return '2 partly cloudy';
+    if (s.cloud > 0.12) return '1 mainly clear';
+    return '0 clear sky';
+  }
+
+  /* Mirrors the engine: a calm, dry, cloudless scene stops redrawing altogether. */
+  function loopState(s) {
+    var moving = s.precip !== 'none' || s.wind > 0.06 || s.cloud > 0.08 || s.thunder;
+    if (moving) return ['running &middot; 12fps', 'loop-run'];
+    return [ov.enabled && ov.showClock && !locked ? 'idle &middot; 1 wake/min' : 'idle &middot; 0 cpu', 'loop-idle'];
+  }
+
+  function draw() {
+    var r = C.renderScene(SPEC, st, cv.width, cv.height, t, { overlay: ov, locked: locked });
+    var src = r.frame.d, dst = img.data;
+    for (var i = 0, n = cv.width * cv.height; i < n; i++) {
+      dst[i * 4] = src[i * 3]; dst[i * 4 + 1] = src[i * 3 + 1];
+      dst[i * 4 + 2] = src[i * 3 + 2]; dst[i * 4 + 3] = 255;
+    }
+    g.putImageData(img, 0, 0);
+
+    $('r-alt').textContent = (r.ctx.alt >= 0 ? '+' : '') + r.ctx.alt.toFixed(2);
+    $('r-wmo').textContent = wmo(st);
+    $('r-size').textContent = cv.width + '×' + cv.height + ' px';
+    var ls = loopState(st);
+    $('r-loop').innerHTML = ls[0];
+    $('r-loop').className = ls[1];
+  }
+
+  function syncLabels() {
+    $('v-hour').textContent = hhmm(st.hour);
+    $('v-sunrise').textContent = hhmm(st.sunrise);
+    $('v-sunset').textContent = hhmm(st.sunset);
+    $('v-cloud').textContent = Math.round(st.cloud * 100) + '%';
+    $('v-wind').textContent = Math.round(st.wind * 100) + '%';
+    $('v-temp').textContent = st.tempC + '°C';
+    $('v-size').textContent = ov.size + '×';
+  }
+
+  function bindRange(id, key, target) {
+    $(id).addEventListener('input', function (e) {
+      (target || st)[key] = parseFloat(e.target.value);
+      syncLabels(); draw();
+    });
+  }
+  bindRange('hour', 'hour'); bindRange('sunrise', 'sunrise'); bindRange('sunset', 'sunset');
+  bindRange('cloud', 'cloud'); bindRange('wind', 'wind');
+  $('temp').addEventListener('input', function (e) { st.tempC = parseInt(e.target.value, 10); syncLabels(); draw(); });
+  $('precip').addEventListener('change', function (e) { st.precip = e.target.value; draw(); });
+  $('cond').addEventListener('change', function (e) { st.condition = e.target.value; draw(); });
+  $('season').addEventListener('change', function (e) { st.season = e.target.value; draw(); });
+
+  function toggle(id, on, off, fn) {
+    $(id).addEventListener('click', function () {
+      var next = $(id).getAttribute('aria-pressed') !== 'true';
+      $(id).setAttribute('aria-pressed', String(next));
+      $(id).textContent = next ? on : off;
+      fn(next); draw();
+    });
+  }
+  toggle('thunder', 'On', 'Off', function (v) { st.thunder = v; });
+  toggle('locked', 'Locked', 'Unlocked', function (v) { locked = v; });
+  toggle('anim', 'Playing', 'Paused', function (v) { playing = v; });
+
+  [['ov-clock', 'showClock'], ['ov-temp', 'showTemp'], ['ov-cond', 'showCondition'], ['ov-place', 'showLocation']]
+    .forEach(function (p) { $(p[0]).addEventListener('change', function (e) { ov[p[1]] = e.target.checked; draw(); }); });
+
+  $('size-up').addEventListener('click', function () { ov.size = Math.min(4, ov.size + 1); syncLabels(); draw(); });
+  $('size-down').addEventListener('click', function () { ov.size = Math.max(1, ov.size - 1); syncLabels(); draw(); });
+
+  /* Drag-to-position: the same interaction the Android settings screen uses. */
+  var dragging = false;
+  function place(e) {
+    var b = cv.getBoundingClientRect();
+    ov.x = Math.min(1, Math.max(0, (e.clientX - b.left) / b.width));
+    ov.y = Math.min(1, Math.max(0, (e.clientY - b.top) / b.height));
+    draw();
+  }
+  cv.addEventListener('pointerdown', function (e) { dragging = true; cv.setPointerCapture(e.pointerId); place(e); });
+  cv.addEventListener('pointermove', function (e) { if (dragging) place(e); });
+  cv.addEventListener('pointerup', function () { dragging = false; });
+
+  var PRESETS = [
+    ['Summer noon',  { hour: 12.5, cloud: 0.10, wind: 0.10, precip: 'none', condition: 'auto', season: 'summer', tempC: 22, thunder: false }],
+    ['Dawn mist',    { hour: 6.4,  cloud: 0.55, wind: 0.04, precip: 'none', condition: 'fog',  season: 'spring', tempC: 6,  thunder: false }],
+    ['Autumn storm', { hour: 16.0, cloud: 1.00, wind: 0.85, precip: 'heavy_rain', condition: 'auto', season: 'autumn', tempC: 11, thunder: true }],
+    ['Winter night', { hour: 22.0, cloud: 0.60, wind: 0.25, precip: 'snow', condition: 'auto', season: 'winter', tempC: -3, thunder: false }],
+    ['Golden hour',  { hour: 19.2, cloud: 0.25, wind: 0.18, precip: 'none', condition: 'auto', season: 'autumn', tempC: 15, thunder: false }],
+  ];
+  var pc = $('presets');
+  PRESETS.forEach(function (p) {
+    var b = document.createElement('button');
+    b.textContent = p[0];
+    b.addEventListener('click', function () {
+      Object.assign(st, p[1]);
+      $('hour').value = st.hour; $('cloud').value = st.cloud; $('wind').value = st.wind;
+      $('temp').value = st.tempC; $('precip').value = st.precip; $('cond').value = st.condition;
+      $('season').value = st.season;
+      $('thunder').setAttribute('aria-pressed', String(st.thunder));
+      $('thunder').textContent = st.thunder ? 'On' : 'Off';
+      syncLabels(); draw();
+    });
+    pc.appendChild(b);
+  });
+
+  /* Throttled to the same ~12fps the wallpaper runs at, so motion here matches the device. */
+  function tick(now) {
+    if (playing && now - t0 >= 83) { t += now - t0; t0 = now; draw(); }
+    else if (!playing) { t0 = now; }
+    requestAnimationFrame(tick);
+  }
+  syncLabels(); draw();
+  if (!reduced) requestAnimationFrame(tick);
+  else { $('anim').setAttribute('aria-pressed', 'false'); $('anim').textContent = 'Paused'; }
+})();
+</script>
