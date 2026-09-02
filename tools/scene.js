@@ -120,7 +120,7 @@
     const n = Math.round(f.w * ctx.horizonY / 900);
     for (let i = 0; i < n; i++) {
       const x = Math.floor(rand() * f.w);
-      const y = Math.floor(rand() * ctx.horizonY * 0.92);
+      const y = Math.floor(rand() * ctx.horizonY * 0.80);
       const base = 0.35 + rand() * 0.65;
       const tw = 0.75 + 0.25 * Math.sin(t * 0.0022 + i * 2.4);
       f.blend(x, y, ctx.accent.star, base * tw * ctx.nightness * (1 - ctx.cloud * 0.9));

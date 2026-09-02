@@ -1,0 +1,79 @@
+// GENERATED FROM art/scene.json BY tools/gen-kotlin.js - DO NOT EDIT BY HAND.
+// Edit the spec and re-run the generator; the preview and the app then stay in step.
+
+package com.sylcolabs.weatherpaper.scene
+
+/**
+ * 5x7 uppercase bitmap font for the home-screen readout.
+ *
+ * Each glyph is packed into one Long, bit (row * WIDTH + col) set where there is ink.
+ * [INDEX] maps a character to its slot; anything not in it falls back to '?'.
+ */
+internal object PixelFont {
+    const val WIDTH = 5
+    const val HEIGHT = 7
+    const val TRACKING = 1
+    const val ADVANCE = WIDTH + TRACKING
+
+    const val INDEX = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ °:-.'/?"
+
+    val GLYPHS = longArrayOf(
+        15623448110L,
+        15170932932L,
+        33357578798L,
+        15619990031L,
+        8891181448L,
+        15620127807L,
+        15621129292L,
+        2216829471L,
+        15621113390L,
+        6728664622L,
+        18842895918L,
+        16694887983L,
+        15603893806L,
+        16694953519L,
+        33321092159L,
+        1108837439L,
+        32801457710L,
+        18842895921L,
+        33424543903L,
+        15621177872L,
+        18560947505L,
+        33320633377L,
+        18842572657L,
+        18842703473L,
+        15621211694L,
+        1108854319L,
+        23946905134L,
+        18561353263L,
+        15620048430L,
+        4433514655L,
+        15621211697L,
+        4648912433L,
+        19182306865L,
+        18834663985L,
+        4433521201L,
+        33321787935L,
+        0L,
+        6438L,
+        134217856L,
+        458752L,
+        4294967296L,
+        132L,
+        1109533200L,
+        4299440686L,
+    )
+
+    private val FALLBACK = INDEX.indexOf('?')
+
+    fun glyph(c: Char): Long {
+        val i = INDEX.indexOf(c)
+        return GLYPHS[if (i >= 0) i else FALLBACK]
+    }
+
+    /** True where the glyph has ink at (col, row). */
+    fun ink(g: Long, col: Int, row: Int): Boolean = (g ushr (row * WIDTH + col)) and 1L == 1L
+
+    fun width(text: String, scale: Int): Int =
+        if (text.isEmpty()) 0 else (text.length * ADVANCE - TRACKING) * scale
+}

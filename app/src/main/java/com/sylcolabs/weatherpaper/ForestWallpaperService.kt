@@ -1,158 +1,217 @@
 package com.sylcolabs.weatherpaper
 
-import android.graphics.Bitmap
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.graphics.Canvas
-import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Rect
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
+import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
+import com.sylcolabs.weatherpaper.scene.Art
+import com.sylcolabs.weatherpaper.scene.SceneRenderer
+import com.sylcolabs.weatherpaper.scene.SceneState
+import com.sylcolabs.weatherpaper.weather.WeatherRepository
+import java.util.Calendar
 import kotlin.math.ceil
 import kotlin.math.max
 
 /**
  * The live wallpaper.
  *
- * Rendering model: the scene is drawn into a small virtual bitmap (roughly [VIRTUAL_HEIGHT] px
- * tall) and blitted to the surface at an *integer* scale with filtering off. Integer scaling is
- * what keeps pixels square and identical in size; a fractional scale is what makes most pixel-art
- * wallpapers shimmer.
+ * Rendering: the scene is drawn into a small virtual buffer (roughly [Art.VIRTUAL_HEIGHT] px
+ * tall) and blitted at an *integer* scale with filtering off, so scene pixels stay square and
+ * uniform. A fractional scale is what makes most pixel-art wallpapers shimmer.
+ *
+ * Cost: nothing runs while the wallpaper is hidden, and a calm, dry, cloudless scene stops
+ * redrawing entirely rather than spinning at a fixed frame rate.
  */
 class ForestWallpaperService : WallpaperService() {
 
     override fun onCreateEngine(): Engine = ForestEngine()
 
-    private inner class ForestEngine : Engine() {
+    private inner class ForestEngine : Engine(), SharedPreferences.OnSharedPreferenceChangeListener {
 
         private val handler = Handler(Looper.getMainLooper())
+        private val renderer = SceneRenderer()
+        private val prefs = Prefs(this@ForestWallpaperService)
+        private val repo = WeatherRepository(this@ForestWallpaperService, prefs)
 
-        /** Nearest-neighbour blit: no filtering, no antialiasing, so pixels stay hard squares. */
+        private val keyguard =
+            getSystemService(Context.KEYGUARD_SERVICE) as? KeyguardManager
+        private val power =
+            getSystemService(Context.POWER_SERVICE) as? PowerManager
+
+        /** Nearest-neighbour blit: pixels stay hard squares at any screen size. */
         private val blitPaint = Paint().apply {
             isFilterBitmap = false
             isAntiAlias = false
             isDither = false
         }
 
-        private var virtual: Bitmap? = null
-        private var virtualCanvas: Canvas? = null
         private val srcRect = Rect()
         private val dstRect = Rect()
-
-        private var surfaceWidth = 0
-        private var surfaceHeight = 0
         private var scale = 1
-
         private var visible = false
-        private var frame = 0L
+        private var locked = false
+        private var slide = 0f
+        private var overlay = prefs.overlay
 
         private val drawRunnable = Runnable { drawFrame() }
+
+        /**
+         * Lock state has no official API for wallpapers, so it is tracked from the screen and
+         * unlock broadcasts rather than polled per frame.
+         */
+        private val screenReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context?, intent: Intent?) {
+                val wasLocked = locked
+                locked = keyguard?.isKeyguardLocked ?: false
+                if (wasLocked != locked && visible) drawFrame()
+            }
+        }
+
+        override fun onCreate(surfaceHolder: SurfaceHolder) {
+            super.onCreate(surfaceHolder)
+            setTouchEventsEnabled(false)
+            locked = keyguard?.isKeyguardLocked ?: false
+            prefs.registerListener(this)
+            registerReceiver(
+                screenReceiver,
+                IntentFilter().apply {
+                    addAction(Intent.ACTION_SCREEN_ON)
+                    addAction(Intent.ACTION_SCREEN_OFF)
+                    addAction(Intent.ACTION_USER_PRESENT)
+                },
+            )
+        }
+
+        override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
+            overlay = prefs.overlay
+            renderer.invalidate()
+            if (visible) drawFrame()
+        }
 
         override fun onVisibilityChanged(visible: Boolean) {
             this.visible = visible
             if (visible) {
+                locked = keyguard?.isKeyguardLocked ?: false
+                overlay = prefs.overlay
+                // The only place weather is ever fetched: no background jobs, no wakeups.
+                repo.refreshIfStale { handler.post { renderer.invalidate(); if (this.visible) drawFrame() } }
                 drawFrame()
             } else {
-                // Nothing runs while we are not on screen.
                 handler.removeCallbacks(drawRunnable)
             }
         }
 
+        override fun onOffsetsChanged(
+            xOffset: Float, yOffset: Float,
+            xStep: Float, yStep: Float,
+            xPixels: Int, yPixels: Int,
+        ) {
+            slide = (xOffset - 0.5f) * 2f
+            if (visible) drawFrame()
+        }
+
         override fun onSurfaceChanged(holder: SurfaceHolder, format: Int, width: Int, height: Int) {
-            surfaceWidth = width
-            surfaceHeight = height
-            allocateVirtual()
+            scale = max(1, height / Art.VIRTUAL_HEIGHT)
+            val vw = ceil(width.toDouble() / scale).toInt().coerceAtLeast(1)
+            val vh = ceil(height.toDouble() / scale).toInt().coerceAtLeast(1)
+            renderer.resize(vw, vh)
+            srcRect.set(0, 0, vw, vh)
+            dstRect.set(0, 0, vw * scale, vh * scale)
             drawFrame()
         }
 
         override fun onSurfaceDestroyed(holder: SurfaceHolder) {
             visible = false
             handler.removeCallbacks(drawRunnable)
-            releaseVirtual()
         }
 
         override fun onDestroy() {
             handler.removeCallbacks(drawRunnable)
-            releaseVirtual()
+            prefs.unregisterListener(this)
+            runCatching { unregisterReceiver(screenReceiver) }
+            renderer.release()
             super.onDestroy()
         }
 
-        private fun allocateVirtual() {
-            releaseVirtual()
-            if (surfaceWidth <= 0 || surfaceHeight <= 0) return
-
-            scale = max(1, surfaceHeight / VIRTUAL_HEIGHT)
-            val vw = ceil(surfaceWidth.toDouble() / scale).toInt().coerceAtLeast(1)
-            val vh = ceil(surfaceHeight.toDouble() / scale).toInt().coerceAtLeast(1)
-
-            val bmp = Bitmap.createBitmap(vw, vh, Bitmap.Config.ARGB_8888)
-            virtual = bmp
-            virtualCanvas = Canvas(bmp)
-            srcRect.set(0, 0, vw, vh)
-            dstRect.set(0, 0, vw * scale, vh * scale)
-        }
-
-        private fun releaseVirtual() {
-            virtual?.recycle()
-            virtual = null
-            virtualCanvas = null
+        /** Build the scene state from the cached observation and the clock. */
+        private fun buildState(): SceneState {
+            val obs = repo.cached()
+            val cal = Calendar.getInstance()
+            val code = obs?.weatherCode ?: 0
+            val cloud = obs?.cloudCover ?: 0.25f
+            return SceneState(
+                hour = SceneState.hourOfDay(cal),
+                sunrise = obs?.sunriseHour ?: 6.5f,
+                sunset = obs?.sunsetHour ?: 19.5f,
+                cloud = cloud,
+                precip = SceneState.precipFor(code),
+                condition = SceneState.conditionFor(code, cloud),
+                wind = SceneState.windFor(obs?.windKmh ?: 6f),
+                season = SceneState.seasonFor(cal.get(Calendar.MONTH) + 1, prefs.lastLatitude.toDouble()),
+                thunder = SceneState.thunderFor(code),
+                tempC = obs?.tempC,
+                place = repo.placeName(),
+                moonPhase = SceneState.moonPhaseAt(System.currentTimeMillis()),
+            )
         }
 
         private fun drawFrame() {
+            val state = buildState()
             val holder = surfaceHolder
-            val bmp = virtual
-            val vc = virtualCanvas
-            if (bmp == null || vc == null) return
-
             var canvas: Canvas? = null
             try {
                 canvas = holder.lockCanvas()
                 if (canvas != null) {
-                    renderScene(vc, bmp.width, bmp.height)
-                    canvas.drawBitmap(bmp, srcRect, dstRect, blitPaint)
+                    val bmp = renderer.render(
+                        state, SystemClock.elapsedRealtime(), slide, locked && !isPreview, overlay,
+                    )
+                    if (bmp != null) canvas.drawBitmap(bmp, srcRect, dstRect, blitPaint)
                 }
+            } catch (e: IllegalArgumentException) {
+                // Surface went away mid-frame; the next onSurfaceChanged will sort it out.
             } finally {
-                if (canvas != null) holder.unlockCanvasAndPost(canvas)
+                if (canvas != null) runCatching { holder.unlockCanvasAndPost(canvas) }
             }
-
-            handler.removeCallbacks(drawRunnable)
-            if (visible) handler.postDelayed(drawRunnable, FRAME_MS)
+            scheduleNext(state)
         }
 
         /**
-         * Placeholder scene. Step 1 only proves the build and scaling pipeline; the real
-         * layered forest renderer replaces this once the art spec is agreed.
+         * Decide when - or whether - to draw again.
+         *
+         * A moving scene runs at [FRAME_MS]. A still one does not spin: if the clock is showing
+         * we wake once at the next minute boundary, and otherwise we stop completely until
+         * something changes.
          */
-        private fun renderScene(canvas: Canvas, vw: Int, vh: Int) {
-            frame++
-            canvas.drawColor(FOREST_DEEP)
+        private fun scheduleNext(state: SceneState) {
+            handler.removeCallbacks(drawRunnable)
+            if (!visible) return
 
-            // A one-pixel checker strip along the top: on device every square must be exactly
-            // `scale` pixels wide. If they are uneven, the integer-scale maths is wrong.
-            val probe = Paint().apply { isAntiAlias = false }
-            for (x in 0 until vw) {
-                probe.color = if ((x / 4) % 2 == 0) FOREST_NIGHT else CANOPY_LIT
-                canvas.drawRect(x.toFloat(), 0f, (x + 1).toFloat(), 4f, probe)
+            val saving = power?.isPowerSaveMode == true
+            if (state.isAnimated() && !saving) {
+                handler.postDelayed(drawRunnable, FRAME_MS)
+                return
             }
-
-            // Slow sweep, so it is obvious the loop is running and stopping with visibility.
-            probe.color = CANOPY_MID
-            val y = (frame % vh).toFloat()
-            canvas.drawRect(0f, y, vw.toFloat(), y + 2f, probe)
+            if (overlay.enabled && overlay.showClock && !locked) {
+                val now = System.currentTimeMillis()
+                handler.postDelayed(drawRunnable, MINUTE_MS - (now % MINUTE_MS))
+            }
         }
     }
 
     private companion object {
-        /** Target height of the virtual pixel canvas, in scene pixels. */
-        const val VIRTUAL_HEIGHT = 260
-
         /** ~12fps. Low frame rates read as deliberate for pixel art and cost far less battery. */
         const val FRAME_MS = 83L
-
-        val FOREST_DEEP = Color.rgb(0x0F, 0x24, 0x19)
-        val FOREST_NIGHT = Color.rgb(0x06, 0x10, 0x0C)
-        val CANOPY_MID = Color.rgb(0x1C, 0x3D, 0x28)
-        val CANOPY_LIT = Color.rgb(0x3A, 0x67, 0x40)
+        const val MINUTE_MS = 60_000L
     }
 }
