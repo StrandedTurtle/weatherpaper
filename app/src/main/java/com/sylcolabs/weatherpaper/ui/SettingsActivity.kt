@@ -45,13 +45,13 @@ class SettingsActivity : Activity() {
     private lateinit var results: LinearLayout
 
     private val handler = Handler(Looper.getMainLooper())
-    private var overlay = OverlayConfig()
+    private var readout = OverlayConfig()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         prefs = Prefs(this)
         repo = WeatherRepository(this, prefs)
-        overlay = prefs.overlay
+        readout = prefs.overlay
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -61,9 +61,9 @@ class SettingsActivity : Activity() {
 
         preview = PreviewView(this).apply {
             state = SceneStates.current(prefs, repo)
-            overlay = this@SettingsActivity.overlay
-            onOverlayMoved = { x, y ->
-                this@SettingsActivity.overlay = this@SettingsActivity.overlay.copy(x = x, y = y)
+            readout = this@SettingsActivity.readout
+            onReadoutMoved = { x, y ->
+                this@SettingsActivity.readout = this@SettingsActivity.readout.copy(x = x, y = y)
                 save()
             }
         }
@@ -72,11 +72,11 @@ class SettingsActivity : Activity() {
 
         root.addView(heading("Home-screen readout"))
         root.addView(caption("Shown on the home screen only — the lock screen stays clear."))
-        root.addView(check("Clock", overlay.showClock) { overlay = overlay.copy(showClock = it); save() })
-        root.addView(check("24-hour clock", overlay.clock24) { overlay = overlay.copy(clock24 = it); save() })
-        root.addView(check("Temperature", overlay.showTemp) { overlay = overlay.copy(showTemp = it); save() })
-        root.addView(check("Condition", overlay.showCondition) { overlay = overlay.copy(showCondition = it); save() })
-        root.addView(check("Location name", overlay.showLocation) { overlay = overlay.copy(showLocation = it); save() })
+        root.addView(check("Clock", readout.showClock) { readout = readout.copy(showClock = it); save() })
+        root.addView(check("24-hour clock", readout.clock24) { readout = readout.copy(clock24 = it); save() })
+        root.addView(check("Temperature", readout.showTemp) { readout = readout.copy(showTemp = it); save() })
+        root.addView(check("Condition", readout.showCondition) { readout = readout.copy(showCondition = it); save() })
+        root.addView(check("Location name", readout.showLocation) { readout = readout.copy(showLocation = it); save() })
         root.addView(sizeRow())
 
         root.addView(heading("Location"))
@@ -129,8 +129,8 @@ class SettingsActivity : Activity() {
     }
 
     private fun save() {
-        prefs.overlay = overlay
-        preview.overlay = overlay
+        prefs.overlay = readout
+        preview.readout = readout
     }
 
     /** Ask for fresh weather and repaint the preview when it lands. */
@@ -164,13 +164,13 @@ class SettingsActivity : Activity() {
         }, LinearLayout.LayoutParams(0, WRAP_CONTENT, 1f))
 
         sizeLabel = TextView(this).apply {
-            text = "${overlay.size}×"
+            text = "${readout.size}×"
             setTextColor(MUTED)
             setPadding(dp(12), 0, dp(12), 0)
         }
         fun bump(by: Int) {
-            overlay = overlay.copy(size = (overlay.size + by).coerceIn(1, 4))
-            sizeLabel.text = "${overlay.size}×"
+            readout = readout.copy(size = (readout.size + by).coerceIn(1, 4))
+            sizeLabel.text = "${readout.size}×"
             save()
         }
         row.addView(button("−") { bump(-1) })

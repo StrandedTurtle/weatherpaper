@@ -38,11 +38,15 @@ internal class PreviewView @JvmOverloads constructor(
     var state: SceneState = SceneState()
         set(v) { field = v; renderer.invalidate(); invalidate() }
 
-    var overlay: OverlayConfig = OverlayConfig()
+    /**
+     * Named "readout" rather than "overlay" deliberately: [android.view.View] already has an
+     * `overlay` property, and shadowing it here would silently resolve to the wrong thing.
+     */
+    var readout: OverlayConfig = OverlayConfig()
         set(v) { field = v; invalidate() }
 
     /** Called while the readout is dragged, with fractional coordinates. */
-    var onOverlayMoved: ((Float, Float) -> Unit)? = null
+    var onReadoutMoved: ((Float, Float) -> Unit)? = null
 
     var animating = true
         set(v) { field = v; if (v) invalidate() }
@@ -65,7 +69,7 @@ internal class PreviewView @JvmOverloads constructor(
     }
 
     override fun onDraw(canvas: Canvas) {
-        val bmp = renderer.render(state, SystemClock.elapsedRealtime(), 0f, false, overlay)
+        val bmp = renderer.render(state, SystemClock.elapsedRealtime(), 0f, false, readout)
         if (bmp != null) canvas.drawBitmap(bmp, src, dst, blitPaint)
         if (animating && state.isAnimated()) postInvalidateDelayed(FRAME_MS)
     }
@@ -76,8 +80,8 @@ internal class PreviewView @JvmOverloads constructor(
                 parent?.requestDisallowInterceptTouchEvent(true)
                 val x = (event.x / width).coerceIn(0f, 1f)
                 val y = (event.y / height).coerceIn(0f, 1f)
-                overlay = overlay.copy(x = x, y = y)
-                onOverlayMoved?.invoke(x, y)
+                readout = readout.copy(x = x, y = y)
+                onReadoutMoved?.invoke(x, y)
                 return true
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
