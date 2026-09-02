@@ -19,7 +19,6 @@ import com.sylcolabs.weatherpaper.scene.Art
 import com.sylcolabs.weatherpaper.scene.SceneRenderer
 import com.sylcolabs.weatherpaper.scene.SceneState
 import com.sylcolabs.weatherpaper.weather.WeatherRepository
-import java.util.Calendar
 import kotlin.math.ceil
 import kotlin.math.max
 
@@ -144,30 +143,8 @@ class ForestWallpaperService : WallpaperService() {
             super.onDestroy()
         }
 
-        /** Build the scene state from the cached observation and the clock. */
-        private fun buildState(): SceneState {
-            val obs = repo.cached()
-            val cal = Calendar.getInstance()
-            val code = obs?.weatherCode ?: 0
-            val cloud = obs?.cloudCover ?: 0.25f
-            return SceneState(
-                hour = SceneState.hourOfDay(cal),
-                sunrise = obs?.sunriseHour ?: 6.5f,
-                sunset = obs?.sunsetHour ?: 19.5f,
-                cloud = cloud,
-                precip = SceneState.precipFor(code),
-                condition = SceneState.conditionFor(code, cloud),
-                wind = SceneState.windFor(obs?.windKmh ?: 6f),
-                season = SceneState.seasonFor(cal.get(Calendar.MONTH) + 1, prefs.lastLatitude.toDouble()),
-                thunder = SceneState.thunderFor(code),
-                tempC = obs?.tempC,
-                place = repo.placeName(),
-                moonPhase = SceneState.moonPhaseAt(System.currentTimeMillis()),
-            )
-        }
-
         private fun drawFrame() {
-            val state = buildState()
+            val state = SceneStates.current(prefs, repo)
             val holder = surfaceHolder
             var canvas: Canvas? = null
             try {
