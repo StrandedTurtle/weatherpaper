@@ -427,7 +427,7 @@
     const n = Math.round(f.w * ctx.horizonY / 900);
     for (let i = 0; i < n; i++) {
       const x = Math.floor(rand() * f.w);
-      const y = Math.floor(rand() * ctx.horizonY * 0.92);
+      const y = Math.floor(rand() * ctx.horizonY * 0.80);
       const base = 0.35 + rand() * 0.65;
       const tw = 0.75 + 0.25 * Math.sin(t * 0.0022 + i * 2.4);
       f.blend(x, y, ctx.accent.star, base * tw * ctx.nightness * (1 - ctx.cloud * 0.9));
@@ -630,7 +630,8 @@
         const b = (BAYER[y & 3][x & 3] / 16 - 0.5) * step;
         let c = [base[0] + b, base[1] + b, base[2] + b];
         const n = hash2(x, y, spec.seed + 31);
-        if (n < 0.05 && snowAmt < 0.5) c = S.canopyColour(ctx, 2 + ((n * 997) | 0) % 3, 0.20);
+        // Undergrowth uses the near layer's depth so the Kotlin port can reuse that palette.
+        if (n < 0.05 && snowAmt < 0.5) c = S.canopyColour(ctx, 2 + ((n * 997) | 0) % 3, spec.layout.layers[2].depth);
         f.px(x, y, seam >= 1 ? c : mix(f.get(x, y), c, seam));
       }
     }

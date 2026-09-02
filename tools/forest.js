@@ -147,7 +147,8 @@
         const b = (BAYER[y & 3][x & 3] / 16 - 0.5) * step;
         let c = [base[0] + b, base[1] + b, base[2] + b];
         const n = hash2(x, y, spec.seed + 31);
-        if (n < 0.05 && snowAmt < 0.5) c = S.canopyColour(ctx, 2 + ((n * 997) | 0) % 3, 0.20);
+        // Undergrowth uses the near layer's depth so the Kotlin port can reuse that palette.
+        if (n < 0.05 && snowAmt < 0.5) c = S.canopyColour(ctx, 2 + ((n * 997) | 0) % 3, spec.layout.layers[2].depth);
         f.px(x, y, seam >= 1 ? c : mix(f.get(x, y), c, seam));
       }
     }

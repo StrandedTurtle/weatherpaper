@@ -27,15 +27,29 @@ jobs:
       - name: Build release APK (shrunk with R8)
         run: ./gradlew --no-daemon assembleRelease
 
-      - name: Report APK sizes
+      - name: Report APK sizes and enforce the budget
         run: |
           echo "### APK sizes" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Build | Size |" >> "$GITHUB_STEP_SUMMARY"
           echo "|---|---|" >> "$GITHUB_STEP_SUMMARY"
           for apk in $(find app/build/outputs/apk -name '*.apk' | sort); do
-            printf '| `%s` | %s |\n' "$(basename "$apk")" "$(du -h "$apk" | cut -f1)" >> "$GITHUB_STEP_SUMMARY"
+            bytes=$(stat -c%s "$apk")
+            echo "$(basename "$apk"): $bytes bytes ($((bytes / 1024)) KB)"
+            printf '| `%s` | %s KB |\n' "$(basename "$apk")" "$((bytes / 1024))" >> "$GITHUB_STEP_SUMMARY"
           done
+
+          # "Super lightweight" is the whole point of this app, so it is a build failure
+          # rather than a note if a dependency ever creeps in and blows the budget.
+          release=$(find app/build/outputs/apk/release -name '*.apk' | head -1)
+          bytes=$(stat -c%s "$release")
+          budget=$((1024 * 1024))
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Release budget: $((bytes / 1024)) KB of $((budget / 1024)) KB" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$bytes" -gt "$budget" ]; then
+            echo "::error::Release APK is $((bytes / 1024)) KB, over the $((budget / 1024)) KB budget."
+            exit 1
+          fi
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4

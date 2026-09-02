@@ -153,7 +153,8 @@ internal object Forest {
                 val b = (Noise.BAYER[y and 3][x and 3] / 16f - 0.5f) * step
                 val n = Noise.hash(x, y, Art.SEED + 31)
                 var c = if (n < 0.05f && snowAmt < 0.5f) {
-                    ctx.canopy[0][(2 + ((n * 997).toInt() % 3)).coerceIn(0, 7)]
+                    // Undergrowth borrows the near layer's palette, matching tools/forest.js.
+                    ctx.canopy[UNDERGROWTH_LAYER][(2 + ((n * 997).toInt() % 3)).coerceIn(0, 7)]
                 } else {
                     Colour.offset(base, b.roundToInt())
                 }
@@ -208,4 +209,7 @@ internal object Forest {
     }
 
     private const val REFLECT = 2.8f
+
+    /** The 'near' depth layer, whose palette the clearing-floor undergrowth reuses. */
+    private const val UNDERGROWTH_LAYER = 2
 }
