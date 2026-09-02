@@ -50,10 +50,12 @@ jobs:
             echo "::error::Release APK is $((bytes / 1024)) KB, over the $((budget / 1024)) KB budget."
             exit 1
           fi
+          # Surfaced in the artifact name so the size is visible without opening the log.
+          echo "RELEASE_KB=$((bytes / 1024))" >> "$GITHUB_ENV"
 
       - name: Upload APKs
         uses: actions/upload-artifact@v4
         with:
-          name: weatherpaper-apks
+          name: weatherpaper-apks-${{ env.RELEASE_KB }}KB-release
           path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
