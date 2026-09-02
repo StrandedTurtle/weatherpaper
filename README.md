@@ -1,86 +1,139 @@
 # WeatherPaper
 
 A pixel-art forest live wallpaper for Android that follows your local weather, the time of day
-and the season. Dark green, deliberately small, and built to cost almost nothing to run.
+and the season. Dark green, deliberately tiny, and built to cost almost nothing to run.
+
+**The release APK is 79 KB.** No third-party dependencies at all.
 
 ![The scene at dawn, midday, golden hour and night](art/shots/time.png)
 
+---
+
 ## What it does
 
-A forest clearing: framing trees in silhouette at the screen edges, a treeline across the
-middle, open sky in the gap, and a pool that mirrors the sky back at you.
+You are standing in a forest clearing. Silhouetted trees frame the edges of the screen, a
+treeline runs across the middle, sky fills the gap above it, and a still pool mirrors that sky
+back at you.
 
-- **Time of day** — the sky ramps continuously from night through dawn to day and back, with
-  stars, and the sun or the moon (at its real phase) tracking an arc across the sky.
+- **Time of day** — the sky ramps continuously from night through dawn to day and back. Stars
+  come out; the sun or the moon, at its real phase, tracks an arc across the sky.
 - **Weather** — cloud cover, drizzle through to heavy rain, snow, fog, and thunderstorm flashes.
-  Wind bends the rain and sways the canopy.
+  Wind slants the rain and sways the canopy.
 - **Season** — spring blossom, summer green, autumn ambers, winter snow caps and a frozen pool.
-  Hemisphere-aware, so it is correct south of the equator.
+  Hemisphere-aware, so it is right south of the equator too.
 - **Home-screen readout** — an optional clock, temperature, condition and place name in a 5×7
-  pixel font. Home screen only; the lock screen stays pure art.
+  pixel font, positioned by dragging. Home screen only; the lock screen stays pure art.
+
+![The four seasons](art/shots/seasons.png)
+![Clear, partly cloudy, overcast, rain, heavy rain with wind, and fog](art/shots/weather.png)
+
+---
 
 ## Installing
 
-There is no Play Store build. CI builds an installable APK on every push:
+There is no Play Store build. CI produces an installable APK on every push:
 
-1. Open [Actions](../../actions) and pick the most recent green run.
+1. Open [**Actions**](../../actions) and pick the most recent green run.
 2. Download the `weatherpaper-apks-…` artifact and unzip it.
-3. Sideload `app-release.apk` (already signed, R8-shrunk) onto your phone.
+3. Sideload `app-release.apk` — already signed and R8-shrunk.
 4. **Settings › Wallpaper › Live wallpapers › WeatherPaper**, then open its settings to choose a
    location and configure the readout.
 
+The artifact name carries the release APK's size, so you can see it from the run list.
+
+---
+
 ## Why it is small
 
-No third-party dependencies at all — no AndroidX, no Compose, no Retrofit, no OkHttp, no JSON
-library, no WorkManager, no Play Services. Everything comes from the Android framework:
-`WallpaperService`, `Canvas`, `HttpURLConnection`, `org.json`, `LocationManager` and
-`SharedPreferences`. `android.useAndroidX=false` keeps it that way, and CI fails the build if the
-release APK ever passes 1 MB.
+Zero third-party dependencies. No AndroidX, no Compose, no Retrofit, no OkHttp, no JSON library,
+no WorkManager, no Play Services. Everything comes from the Android framework:
+
+`WallpaperService` · `Canvas` · `HttpURLConnection` · `org.json` · `LocationManager` ·
+`SharedPreferences`
+
+`android.useAndroidX=false` keeps it that way, and CI **fails the build** if the release APK ever
+passes 1 MB — being small is the point, so it should break loudly rather than drift.
 
 ## Why it is cheap to run
 
-- The scene renders into a small buffer (~260px tall) and is blitted at an **integer** scale.
-- Sky, distant treeline, ground and pool, plus each swaying tree layer, live in **cached
-  buffers** rebuilt only when the weather actually changes. A frame is four buffer copies at
-  their sway offsets plus the live weather effects.
-- The loop runs at **~12fps**, which reads as deliberate for pixel art.
-- A calm, dry, cloudless scene **stops redrawing entirely** — or wakes once a minute if the clock
+- The scene renders into a small buffer (~280px tall) and is blitted at an **integer** scale with
+  filtering off, so pixels stay square. A fractional scale is what makes most pixel-art
+  wallpapers shimmer.
+- Sky, distant treeline, ground and pool, plus each swaying tree layer, live in **cached buffers**
+  rebuilt only when the weather actually changes. A frame is four buffer copies at their sway
+  offsets, plus the live weather effects.
+- The loop runs at **~12fps** — which reads as deliberate for pixel art, and costs far less than 60.
+- A calm, dry, cloudless scene **stops redrawing entirely**, or wakes once a minute if the clock
   is showing. Nothing runs at all while the wallpaper is hidden, and power-save forces static.
-- **No background work**: weather is fetched only when the wallpaper becomes visible and the
-  cached reading is over 30 minutes old. No jobs, no alarms, no wakeups.
+- **No background work whatsoever.** Weather is fetched only when the wallpaper becomes visible
+  and the cached reading is over 30 minutes old. No jobs, no alarms, no wakeups. The last reading
+  is persisted, so the first frame after a reboot is never blank.
 
-## Working on the art
+## Privacy
 
-`art/scene.json` is the single source of truth — palette, sky ramps, season tints, layer layout
-and the font. It feeds both the preview and the generated Kotlin, so what you approve is what
-ships.
+Location is optional. Without the permission you pick a place by name and nothing about you
+leaves the device except a latitude and longitude sent to Open-Meteo. With it, the app uses the
+framework's *last known* coarse fix — it never requests an active GPS fix. There is no analytics,
+no account, no API key, and no network traffic beyond the weather lookup.
+
+---
+
+## Making the art your own
+
+**→ See [ART.md](ART.md) for the full guide.**
+
+Draw PNGs using the palette in `art/palette.gpl`, drop them in `art/sprites/`, and run two
+commands. Sprites are palette-*indexed*: each pixel names a slot like "canopy shade 5" or
+"catches snow", and the renderer resolves it at draw time against depth, time of day and season —
+so **one drawing covers every season and every hour** with no per-variant work.
+
+Every sprite set falls back to the built-in procedural art when empty, so you can replace the
+forest one layer at a time and always have something that runs.
 
 ```sh
-node tools/shoot.js          # PNG contact sheets of every state -> art/shots/
-node tools/gen-thumb.js      # regenerate the wallpaper picker thumbnail
-node tools/build-preview.js  # self-contained preview page -> tools/preview/index.html
-node tools/gen-kotlin.js     # regenerate Art.kt and PixelFont.kt
+node tools/gen-palette.js      # the palette to load into Aseprite/GIMP/Piskel
+node tools/import-sprites.js   # validate your drawings -> art/sprites.json
+node tools/build-preview.js    # then open tools/preview/index.html
+node tools/gen-kotlin.js       # push it all into the app
 ```
 
-Open `tools/preview/index.html` in a browser to drive every state with sliders. After editing
-the spec, **re-run `gen-kotlin.js`** — `Art.kt` and `PixelFont.kt` are generated and must never
-be edited by hand.
+`tools/preview/index.html` is a self-contained page that runs the real renderer with sliders for
+time, cloud, wind, temperature, precipitation and season — so you can judge every state in
+seconds without building anything.
 
-The renderer is split the same way in both languages, so changes port one-to-one:
+Node 18+ is all you need for art work. There are no npm dependencies.
 
-| Reference (`tools/`) | Android (`scene/`) | |
-|---|---|---|
-| `render.js` | `Draw.kt` | colour, ramps, PRNG, dithering |
-| `scene.js` | `Palette.kt`, `Sky.kt` | state → colour, sky, stars, sun/moon |
-| `forest.js` | `Forest.kt` | pines, depth layers, ground, scrub, pool |
-| `weather.js` | `Precipitation.kt` | cloud, rain, snow, fog, lightning |
-| `overlay.js` | `Overlay.kt` | outlined pixel text |
-| `compose.js` | `SceneRenderer.kt` | pass order and layer caching |
+---
 
-Colour goes through one indirection: sprites carry shade *indices*, and `SceneContext` resolves
-them once per state change into a small palette per depth layer. That is why foliage turns
-blue-black at night and warm at golden hour, and why seasons need no extra sprites.
+## Building
+
+CI does it on every push. To build locally you need JDK 17 and the Android SDK:
+
+```sh
+./gradlew assembleRelease    # app/build/outputs/apk/release/
+./gradlew assembleDebug
+```
+
+`minSdk 26` (Android 8), `targetSdk 35`. Release builds are signed with the debug key so CI can
+emit something installable; this is a personal sideload build, not a Play Store artifact.
+
+### Layout
+
+```
+app/src/main/java/com/sylcolabs/weatherpaper/
+  ForestWallpaperService.kt   the wallpaper, frame loop and cost control
+  SceneStates.kt              observation + clock -> scene state
+  Prefs.kt                    all persisted state
+  scene/                      the renderer (see ART.md for the JS/Kotlin mapping)
+  weather/                    Open-Meteo client, location, caching
+  ui/                         settings, and the live drag-to-position preview
+art/                          scene.json, sprites, palette, reference shots
+tools/                        renderer reference, importers, generators, preview
+```
+
+---
 
 ## Credits
 
-Weather data by [Open-Meteo](https://open-meteo.com) (CC BY 4.0). No API key, no account.
+Weather data by [**Open-Meteo**](https://open-meteo.com), used under CC BY 4.0. No API key and no
+account required — thank you.
