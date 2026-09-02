@@ -61,7 +61,7 @@ internal object Art {
         Layer(0.8f, 0.606f, 0.055f, 0.095f, 0.44f, 0.62f, 6, 0.2f, 0.12f, 0.0f, 6),
         Layer(0.46f, 0.652f, 0.115f, 0.18f, 0.4f, 0.56f, 13, 0.55f, 0.38f, 0.0f, 6),
         Layer(0.18f, 0.735f, 0.23f, 0.33f, 0.34f, 0.48f, 25, 0.95f, 0.68f, 0.3f, 7),
-        Layer(0.0f, 1.07f, 0.78f, 1.07f, 0.14f, 0.22f, 29, 1.5f, 1.0f, 0.15f, 8),
+        Layer(0.0f, 1.07f, 0.78f, 1.07f, 0.21f, 0.31f, 27, 1.5f, 1.0f, 0.15f, 8),
     )
 
     class Precip(val count: Int, val speed: Float, val length: Int, val alpha: Float)

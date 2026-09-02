@@ -100,7 +100,7 @@
       { "name": "far",   "depth": 0.80, "baseY": 0.606, "height": [0.055, 0.095], "widthRatio": [0.44, 0.62], "spacing": 6,  "sway": 0.20, "parallax": 0.12 },
       { "name": "mid",   "depth": 0.46, "baseY": 0.652, "height": [0.115, 0.180], "widthRatio": [0.40, 0.56], "spacing": 13, "sway": 0.55, "parallax": 0.38 },
       { "name": "near",  "depth": 0.18, "baseY": 0.735, "height": [0.230, 0.330], "widthRatio": [0.34, 0.48], "spacing": 25, "sway": 0.95, "parallax": 0.68, "edgesOnly": 0.30 },
-      { "name": "frame", "depth": 0.00, "baseY": 1.070, "height": [0.780, 1.070], "widthRatio": [0.14, 0.22], "spacing": 29, "sway": 1.50, "parallax": 1.00, "edgesOnly": 0.15 }
+      { "name": "frame", "depth": 0.00, "baseY": 1.070, "height": [0.780, 1.070], "widthRatio": [0.21, 0.31], "spacing": 27, "sway": 1.50, "parallax": 1.00, "edgesOnly": 0.15 }
     ]
   },
 

@@ -66,6 +66,7 @@ internal class SceneRenderer {
         Sky.drawCelestial(bd, ctx, state.moonPhase)
         Forest.drawLayer(bd, ctx, 0, 0f)     // distant treeline: too far away to sway visibly
         Forest.drawGround(bd, ctx)
+        Forest.drawScrub(bd, ctx)
         Forest.drawPool(bd, ctx)
 
         for (i in SWAY_LAYERS.indices) {

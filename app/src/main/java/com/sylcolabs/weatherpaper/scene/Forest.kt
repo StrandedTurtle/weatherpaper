@@ -25,7 +25,10 @@ internal object Forest {
         val canopyPal = ctx.canopy[layerIndex]
         val trunkPal = ctx.trunk[layerIndex]
         val accent = ctx.accent[layerIndex]
-        val accentChance = ctx.season.accentChance
+        // Detail falls away toward the viewer: the framing trees read as silhouette, so they
+        // carry far less season colour than the mid-ground does.
+        val depth = Art.LAYERS[layerIndex].depth
+        val accentChance = ctx.season.accentChance * (0.30f + 0.70f * depth)
         val snowAmt = ctx.season.snow
         val snowCol = ctx.snowTint[layerIndex]
 
@@ -161,6 +164,47 @@ internal object Forest {
                 // Soften the seam where the clearing floor meets the treeline.
                 if (seam < 1f) c = Colour.mix(buf.get(x, y), c, seam)
                 buf.set(x, y, c)
+            }
+        }
+    }
+
+    /**
+     * Low scrub along the base of the treeline and scattered through the clearing. Without it
+     * the ground reads as an empty band between the trees and the water.
+     */
+    fun drawScrub(buf: PixelBuffer, ctx: SceneContext) {
+        val rand = Rng(Art.SEED xor 0x5C2B)
+        val count = (buf.w / 5).coerceAtLeast(1)
+        val snowAmt = ctx.season.snow
+        val baseline = ctx.horizonY
+        val midPal = ctx.canopy[1]
+        val nearPal = ctx.canopy[2]
+
+        for (i in 0 until count) {
+            val x0 = (rand.next() * buf.w).roundToInt()
+            val spread = rand.next()
+            // Most clumps hug the treeline; a few stray out into the clearing.
+            val y0 = (baseline + spread.toDouble().pow(2.2).toFloat() * (buf.h - baseline) * 0.42f).roundToInt()
+            val rx = 2f + rand.next() * 5f
+            val ry = 1.5f + rand.next() * 3f
+
+            for (dy in -ry.roundToInt()..0) {
+                val t = 1f - abs(dy) / ry
+                val hw = rx * sqrt(t.coerceAtLeast(0f))
+                for (dx in -hw.roundToInt()..hw.roundToInt()) {
+                    val x = x0 + dx
+                    val y = y0 + dy
+                    val n = Noise.hash(x, y, Art.SEED + 611)
+                    if (n > 0.86f) continue          // ragged edge rather than a smooth blob
+                    var shade = if (dy < -ry * 0.55f) 4 else 2
+                    if (n < 0.14f) shade++
+                    shade = shade.coerceIn(0, midPal.size - 1)
+                    var c = Colour.mix(midPal[shade], nearPal[shade], spread)
+                    if (snowAmt > 0f && dy < -ry * 0.5f) {
+                        c = Colour.mix(c, ctx.snowColour, snowAmt * 0.7f)
+                    }
+                    buf.set(x, y, c)
+                }
             }
         }
     }

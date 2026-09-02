@@ -31,7 +31,9 @@
     const halfW = w / 2;
     const snowAmt = ctx.season.snow;
     const accent = ctx.seasonAccent;
-    const accentChance = ctx.season.accentChance || 0;
+    // Detail falls away toward the viewer: the framing trees read as silhouette, so they
+    // carry far less season colour than the mid-ground does.
+    const accentChance = (ctx.season.accentChance || 0) * (0.30 + 0.70 * depth);
     const depthMul = [0.32 + 0.68 * depth, 0.32 + 0.68 * depth, 0.32 + 0.68 * depth];
 
     const tiers = 3 + Math.floor(rand() * 5);
@@ -155,6 +157,48 @@
   }
 
   /**
+   * Low scrub along the base of the treeline and scattered through the clearing. Without it the
+   * ground reads as an empty band between the trees and the water.
+   */
+  function drawScrub(f, spec, ctx) {
+    const layers = spec.layout.layers;
+    const baseline = ctx.horizonY;
+    const rand = R.rng(spec.seed ^ 0x5C2B);
+    const count = Math.round(f.w / 5);
+    const snowAmt = ctx.season.snow;
+
+    for (let i = 0; i < count; i++) {
+      const x0 = Math.round(rand() * f.w);
+      const spread = rand();
+      // Most clumps hug the treeline; a few stray out into the clearing.
+      const y0 = Math.round(baseline + Math.pow(spread, 2.2) * (f.h - baseline) * 0.42);
+      const rx = 2 + rand() * 5;
+      const ry = 1.5 + rand() * 3;
+      // Blended between the mid and near layer palettes, so the Kotlin port can mix the two
+      // precomputed lookup entries and get an identical colour.
+
+      for (let dy = -Math.round(ry); dy <= 0; dy++) {
+        const t = 1 - Math.abs(dy) / ry;
+        const hw = rx * Math.sqrt(Math.max(0, t));
+        for (let dx = -Math.round(hw); dx <= Math.round(hw); dx++) {
+          const x = x0 + dx, y = y0 + dy;
+          const n = hash2(x, y, spec.seed + 611);
+          if (n > 0.86) continue;                     // ragged edge rather than a smooth blob
+          let shade = dy < -ry * 0.55 ? 4 : 2;
+          if (n < 0.14) shade += 1;
+          let c = mix(
+            S.canopyColour(ctx, shade, layers[1].depth),
+            S.canopyColour(ctx, shade, layers[2].depth),
+            spread,
+          );
+          if (snowAmt > 0 && dy < -ry * 0.5) c = mix(c, mul(ctx.accent.snow, ctx.tint), snowAmt * 0.7);
+          f.px(x, y, c);
+        }
+      }
+    }
+  }
+
+  /**
    * A still pool in the clearing floor. It mirrors what stands *above the far shore* - the
    * treeline and the sky beyond it - compressed hard, because the water is seen at a glancing
    * angle. That is what makes the sky's colour shift read twice on screen.
@@ -193,5 +237,5 @@
     }
   }
 
-  return { drawPine: drawPine, drawLayer: drawLayer, drawGround: drawGround, drawPool: drawPool, hash2: hash2, patchNoise: patchNoise };
+  return { drawPine: drawPine, drawLayer: drawLayer, drawGround: drawGround, drawScrub: drawScrub, drawPool: drawPool, hash2: hash2, patchNoise: patchNoise };
 });

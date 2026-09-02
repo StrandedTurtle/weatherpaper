@@ -36,6 +36,7 @@
 
     F.drawLayer(f, spec, ctx, layers[0], offsetFor(layers[0], 0));
     F.drawGround(f, spec, ctx);
+    F.drawScrub(f, spec, ctx);
     F.drawPool(f, spec, ctx);
 
     for (let i = 1; i < layers.length; i++) {
