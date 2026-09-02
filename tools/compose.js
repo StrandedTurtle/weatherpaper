@@ -31,8 +31,8 @@
 
     S.drawSky(f, spec, ctx);
     S.drawStars(f, spec, ctx, t);
-    S.drawCelestial(f, spec, ctx, R.moonPhase(st.date || new Date()));
-    W.drawClouds(f, spec, ctx, st, t);
+    S.drawCelestial(f, spec, ctx, R.moonPhase(st.date || new Date()), F);
+    W.drawClouds(f, spec, ctx, st, t, F);
 
     F.drawLayer(f, spec, ctx, layers[0], offsetFor(layers[0], 0));
     F.drawGround(f, spec, ctx);

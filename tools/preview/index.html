@@ -381,6 +381,11 @@
       groundPal: spec.palette.ground.map(hex),
       accent: (function (a) { const o = {}; for (const k in a) o[k] = hex(a[k]); return o; })(spec.palette.accent),
       seasonAccent: season.accent ? hex(season.accent) : null,
+      cloudRamp: (function () {
+        const dark = mix(rampAt(stops, 1), [0, 0, 0], 0.18 + 0.16 * cloud);
+        const light = mix(rampAt(stops, 1), [255, 255, 255], 0.30 - 0.22 * cloud);
+        return [0, 1, 2, 3].map(function (i) { return mix(dark, light, i / 3); });
+      })(),
       bodyX: bodyX, bodyY: bodyY, bodyF: f,
       lightDir: bodyX > w / 2 ? 1 : -1,
       nightness: clamp(smooth(0.10, -0.25, alt), 0, 1),
@@ -434,13 +439,22 @@
     }
   }
 
-  function drawCelestial(f, spec, ctx, moonP) {
+  function drawCelestial(f, spec, ctx, moonP, forest) {
     const vis = 1 - ctx.cloud * 0.85;
     if (vis <= 0.05) return;
     const cx = Math.round(ctx.bodyX), cy = Math.round(ctx.bodyY);
     if (cy > ctx.horizonY + 4) return;
 
     const sun = ctx.isDay;
+
+    // A hand-drawn sun or moon replaces the procedural disc when one exists.
+    const decor = (spec.sprites && spec.sprites.sets && spec.sprites.sets['decor']) || [];
+    if (decor.length && forest) {
+      const want = sun ? 'sun' : 'moon';
+      const drawn = decor.find(function (d) { return d.name === want; });
+      if (drawn) { forest.drawSprite(f, ctx, drawn, cx, cy, 1, vis); return; }
+    }
+
     const r = sun ? 5 : 6;
     const core = sun ? ctx.accent.sun : ctx.accent.moon;
 
@@ -470,7 +484,38 @@
     }
   }
 
+  /**
+   * Resolve one sprite character to a colour. This is the indirection that lets a single
+   * drawing work at dawn, at midnight, in autumn and under snow: the artist names a slot,
+   * and the slot's colour is decided here from depth, time of day and season.
+   */
+  function spriteColour(ctx, ch, depth) {
+    const code = ch.charCodeAt(0);
+    if (ch >= '0' && ch <= '7') return canopyColour(ctx, code - 48, depth);
+    if (ch >= 'a' && ch <= 'd') return trunkColour(ctx, code - 97, depth);
+    if (ch >= 'g' && ch <= 'i') {
+      return mul(mul(ctx.groundPal[code - 103], ctx.season.tint), ctx.tint);
+    }
+    if (ch >= 'p' && ch <= 's') return ctx.cloudRamp[code - 112];
+    const depthMul = 0.32 + 0.68 * depth;
+    // "Catches snow": white in winter, ordinary lit foliage the rest of the year, so one
+    // drawing covers every season without the artist maintaining a separate winter sprite.
+    if (ch === 'w') {
+      const snow = mul(mul(ctx.accent.snow, ctx.tint), [depthMul, depthMul, depthMul]);
+      return mix(canopyColour(ctx, 5, depth), snow, ctx.season.snow);
+    }
+    if (ch === 'x') {
+      // No accent this season (summer, winter) - fall back to ordinary foliage.
+      if (!ctx.seasonAccent) return canopyColour(ctx, 4, depth);
+      return mul(mul(ctx.seasonAccent, ctx.tint), [depthMul, depthMul, depthMul]);
+    }
+    if (ch === 'y') return ctx.isDay ? ctx.accent.sun : ctx.accent.moon;
+    if (ch === 'z') return ctx.accent.star;
+    return null;
+  }
+
   return {
+    spriteColour: spriteColour,
     buildContext: buildContext,
     canopyColour: canopyColour,
     trunkColour: trunkColour,
@@ -500,6 +545,34 @@
   function patchNoise(x, y, seed) {
     return hash2(Math.floor(x / 4), Math.floor(y / 4), seed) * 0.62
          + hash2(Math.floor(x / 2), Math.floor(y / 2), seed + 7) * 0.38;
+  }
+
+  /** Sprites for a set, or an empty list when the artist has not drawn any yet. */
+  function spritesFor(spec, key) {
+    return (spec.sprites && spec.sprites.sets && spec.sprites.sets[key]) || [];
+  }
+
+  /**
+   * Blit a hand-drawn sprite. (x, y) is where the sprite's anchor lands - the base of the
+   * trunk for trees and scrub, the centre for clouds and decor.
+   *
+   * Sprites are never scaled: a non-integer resize is exactly what makes pixel art look
+   * mushy, so they draw at the size they were drawn at.
+   */
+  function drawSprite(f, ctx, sprite, x, y, depth, alpha) {
+    const x0 = Math.round(x) - sprite.ax;
+    const y0 = Math.round(y) - sprite.ay;
+    for (let sy = 0; sy < sprite.h; sy++) {
+      const row = sprite.rows[sy];
+      for (let sx = 0; sx < sprite.w; sx++) {
+        const ch = row[sx];
+        if (ch === '.') continue;
+        const c = S.spriteColour(ctx, ch, depth);
+        if (!c) continue;
+        if (alpha === undefined || alpha >= 1) f.px(x0 + sx, y0 + sy, c);
+        else f.blend(x0 + sx, y0 + sy, c, alpha);
+      }
+    }
   }
 
   /**
@@ -586,6 +659,7 @@
   }
 
   function drawLayer(f, spec, ctx, layer, xOffset) {
+    const sprites = spritesFor(spec, 'trees/' + layer.name);
     const rand = R.rng(spec.seed ^ Math.imul(layer.name.length + 3, 2654435761));
     const baseY = f.h * layer.baseY;
     const margin = Math.round(f.w * 0.3);
@@ -599,6 +673,8 @@
       const hFrac = layer.height[0] + rand() * (layer.height[1] - layer.height[0]);
       const wFrac = wr[0] + rand() * (wr[1] - wr[0]);
       const yJit = (rand() - 0.5) * f.h * 0.012;
+      // Drawn every iteration in both modes, so the placement sequence stays identical.
+      const pick = rand();
       const px = Math.round(x + jitter + xOffset);
       const h = Math.round(f.h * hFrac);
 
@@ -606,6 +682,13 @@
       if (edges > 0) {
         const frac = px / f.w;
         if (frac > edges && frac < 1 - edges) continue;
+      }
+      if (sprites.length) {
+        const sprite = sprites[Math.floor(pick * sprites.length) % sprites.length];
+        if (px + sprite.w >= 0 && px - sprite.w <= f.w) {
+          drawSprite(f, ctx, sprite, px, Math.round(baseY + yJit), layer.depth);
+        }
+        continue;
       }
       const w = Math.max(3, Math.round(h * wFrac));
       if (px + w < 0 || px - w > f.w) continue;
@@ -644,6 +727,7 @@
    * ground reads as an empty band between the trees and the water.
    */
   function drawScrub(f, spec, ctx) {
+    const sprites = spritesFor(spec, 'scrub');
     const layers = spec.layout.layers;
     const baseline = ctx.horizonY;
     const rand = R.rng(spec.seed ^ 0x5C2B);
@@ -657,6 +741,12 @@
       const y0 = Math.round(baseline + Math.pow(spread, 2.2) * (f.h - baseline) * 0.42);
       const rx = 2 + rand() * 5;
       const ry = 1.5 + rand() * 3;
+      const pick = rand();
+      if (sprites.length) {
+        const sprite = sprites[Math.floor(pick * sprites.length) % sprites.length];
+        drawSprite(f, ctx, sprite, x0, y0, layers[1].depth * (1 - spread) + layers[2].depth * spread);
+        continue;
+      }
       // Blended between the mid and near layer palettes, so the Kotlin port can mix the two
       // precomputed lookup entries and get an identical colour.
 
@@ -720,7 +810,7 @@
     }
   }
 
-  return { drawPine: drawPine, drawLayer: drawLayer, drawGround: drawGround, drawScrub: drawScrub, drawPool: drawPool, hash2: hash2, patchNoise: patchNoise };
+  return { drawSprite: drawSprite, spritesFor: spritesFor, drawPine: drawPine, drawLayer: drawLayer, drawGround: drawGround, drawScrub: drawScrub, drawPool: drawPool, hash2: hash2, patchNoise: patchNoise };
 });
 
 /* ---- weather.js ---- */
@@ -1033,8 +1123,8 @@
 
     S.drawSky(f, spec, ctx);
     S.drawStars(f, spec, ctx, t);
-    S.drawCelestial(f, spec, ctx, R.moonPhase(st.date || new Date()));
-    W.drawClouds(f, spec, ctx, st, t);
+    S.drawCelestial(f, spec, ctx, R.moonPhase(st.date || new Date()), F);
+    W.drawClouds(f, spec, ctx, st, t, F);
 
     F.drawLayer(f, spec, ctx, layers[0], offsetFor(layers[0], 0));
     F.drawGround(f, spec, ctx);

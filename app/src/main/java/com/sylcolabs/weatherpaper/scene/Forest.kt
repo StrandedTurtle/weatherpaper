@@ -10,6 +10,30 @@ import kotlin.math.sqrt
 internal object Forest {
 
     /**
+     * Blit a hand-drawn sprite. (x, y) is where the sprite's anchor lands - the base of the
+     * trunk for trees and scrub, the centre for clouds and decor.
+     *
+     * Sprites are never scaled: a non-integer resize is what makes pixel art look mushy, so
+     * they draw at the size they were drawn at.
+     */
+    fun drawSprite(
+        buf: PixelBuffer, ctx: SceneContext, sprite: Sprites.Sprite,
+        x: Int, y: Int, layerIndex: Int, alpha: Float = 1f,
+    ) {
+        val x0 = x - sprite.ax
+        val y0 = y - sprite.ay
+        for (sy in 0 until sprite.h) {
+            val row = sprite.rows[sy]
+            for (sx in 0 until sprite.w) {
+                val ch = row[sx]
+                if (ch == '.') continue
+                val c = ctx.spriteColour(ch, layerIndex)
+                if (alpha >= 1f) buf.set(x0 + sx, y0 + sy, c) else buf.blend(x0 + sx, y0 + sy, c, alpha)
+            }
+        }
+    }
+
+    /**
      * One pine, drawn as a stack of flaring tiers. Each tier resets to a narrow width and flares
      * toward its base, which gives the notched pine silhouette rather than a smooth cone.
      *
@@ -107,6 +131,7 @@ internal object Forest {
     /** Place one depth layer of trees at [xOffset] (sway plus parallax). */
     fun drawLayer(buf: PixelBuffer, ctx: SceneContext, layerIndex: Int, xOffset: Float) {
         val layer = Art.LAYERS[layerIndex]
+        val sprites = Sprites.forLayer(layerIndex)
         val rand = Rng(Art.SEED xor (layer.salt * -1640531535))
         val baseY = buf.h * layer.baseY
         val margin = (buf.w * 0.3f).roundToInt()
@@ -119,6 +144,8 @@ internal object Forest {
             val hFrac = layer.hMin + rand.next() * (layer.hMax - layer.hMin)
             val wFrac = layer.wMin + rand.next() * (layer.wMax - layer.wMin)
             val yJit = (rand.next() - 0.5f) * buf.h * 0.012f
+            // Drawn every iteration in both modes, so the placement sequence stays identical.
+            val pick = rand.next()
             val px = (x + jitter + xOffset).roundToInt()
             val h = (buf.h * hFrac).roundToInt()
 
@@ -127,10 +154,17 @@ internal object Forest {
                 (px.toFloat() / buf.w) > layer.edgesOnly && (px.toFloat() / buf.w) < 1f - layer.edgesOnly
 
             if (!skip) {
-                val w = (h * wFrac).roundToInt().coerceAtLeast(3)
-                if (px + w >= 0 && px - w <= buf.w) {
-                    drawPine(buf, ctx, layerIndex, px, (baseY + yJit).roundToInt(), h, w,
-                        Art.SEED + i * 7919 + layer.spacing)
+                if (sprites.isNotEmpty()) {
+                    val sprite = sprites[(pick * sprites.size).toInt().coerceIn(0, sprites.size - 1)]
+                    if (px + sprite.w >= 0 && px - sprite.w <= buf.w) {
+                        drawSprite(buf, ctx, sprite, px, (baseY + yJit).roundToInt(), layerIndex)
+                    }
+                } else {
+                    val w = (h * wFrac).roundToInt().coerceAtLeast(3)
+                    if (px + w >= 0 && px - w <= buf.w) {
+                        drawPine(buf, ctx, layerIndex, px, (baseY + yJit).roundToInt(), h, w,
+                            Art.SEED + i * 7919 + layer.spacing)
+                    }
                 }
             }
             x += layer.spacing
@@ -187,6 +221,12 @@ internal object Forest {
             val y0 = (baseline + spread.toDouble().pow(2.2).toFloat() * (buf.h - baseline) * 0.42f).roundToInt()
             val rx = 2f + rand.next() * 5f
             val ry = 1.5f + rand.next() * 3f
+            val pick = rand.next()
+            if (Sprites.SCRUB.isNotEmpty()) {
+                val sprite = Sprites.SCRUB[(pick * Sprites.SCRUB.size).toInt().coerceIn(0, Sprites.SCRUB.size - 1)]
+                drawSprite(buf, ctx, sprite, x0, y0, if (spread > 0.5f) 2 else 1)
+                continue
+            }
 
             for (dy in -ry.roundToInt()..0) {
                 val t = 1f - abs(dy) / ry

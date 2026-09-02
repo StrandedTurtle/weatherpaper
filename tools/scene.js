@@ -74,6 +74,11 @@
       groundPal: spec.palette.ground.map(hex),
       accent: (function (a) { const o = {}; for (const k in a) o[k] = hex(a[k]); return o; })(spec.palette.accent),
       seasonAccent: season.accent ? hex(season.accent) : null,
+      cloudRamp: (function () {
+        const dark = mix(rampAt(stops, 1), [0, 0, 0], 0.18 + 0.16 * cloud);
+        const light = mix(rampAt(stops, 1), [255, 255, 255], 0.30 - 0.22 * cloud);
+        return [0, 1, 2, 3].map(function (i) { return mix(dark, light, i / 3); });
+      })(),
       bodyX: bodyX, bodyY: bodyY, bodyF: f,
       lightDir: bodyX > w / 2 ? 1 : -1,
       nightness: clamp(smooth(0.10, -0.25, alt), 0, 1),
@@ -127,13 +132,22 @@
     }
   }
 
-  function drawCelestial(f, spec, ctx, moonP) {
+  function drawCelestial(f, spec, ctx, moonP, forest) {
     const vis = 1 - ctx.cloud * 0.85;
     if (vis <= 0.05) return;
     const cx = Math.round(ctx.bodyX), cy = Math.round(ctx.bodyY);
     if (cy > ctx.horizonY + 4) return;
 
     const sun = ctx.isDay;
+
+    // A hand-drawn sun or moon replaces the procedural disc when one exists.
+    const decor = (spec.sprites && spec.sprites.sets && spec.sprites.sets['decor']) || [];
+    if (decor.length && forest) {
+      const want = sun ? 'sun' : 'moon';
+      const drawn = decor.find(function (d) { return d.name === want; });
+      if (drawn) { forest.drawSprite(f, ctx, drawn, cx, cy, 1, vis); return; }
+    }
+
     const r = sun ? 5 : 6;
     const core = sun ? ctx.accent.sun : ctx.accent.moon;
 
@@ -163,7 +177,38 @@
     }
   }
 
+  /**
+   * Resolve one sprite character to a colour. This is the indirection that lets a single
+   * drawing work at dawn, at midnight, in autumn and under snow: the artist names a slot,
+   * and the slot's colour is decided here from depth, time of day and season.
+   */
+  function spriteColour(ctx, ch, depth) {
+    const code = ch.charCodeAt(0);
+    if (ch >= '0' && ch <= '7') return canopyColour(ctx, code - 48, depth);
+    if (ch >= 'a' && ch <= 'd') return trunkColour(ctx, code - 97, depth);
+    if (ch >= 'g' && ch <= 'i') {
+      return mul(mul(ctx.groundPal[code - 103], ctx.season.tint), ctx.tint);
+    }
+    if (ch >= 'p' && ch <= 's') return ctx.cloudRamp[code - 112];
+    const depthMul = 0.32 + 0.68 * depth;
+    // "Catches snow": white in winter, ordinary lit foliage the rest of the year, so one
+    // drawing covers every season without the artist maintaining a separate winter sprite.
+    if (ch === 'w') {
+      const snow = mul(mul(ctx.accent.snow, ctx.tint), [depthMul, depthMul, depthMul]);
+      return mix(canopyColour(ctx, 5, depth), snow, ctx.season.snow);
+    }
+    if (ch === 'x') {
+      // No accent this season (summer, winter) - fall back to ordinary foliage.
+      if (!ctx.seasonAccent) return canopyColour(ctx, 4, depth);
+      return mul(mul(ctx.seasonAccent, ctx.tint), [depthMul, depthMul, depthMul]);
+    }
+    if (ch === 'y') return ctx.isDay ? ctx.accent.sun : ctx.accent.moon;
+    if (ch === 'z') return ctx.accent.star;
+    return null;
+  }
+
   return {
+    spriteColour: spriteColour,
     buildContext: buildContext,
     canopyColour: canopyColour,
     trunkColour: trunkColour,

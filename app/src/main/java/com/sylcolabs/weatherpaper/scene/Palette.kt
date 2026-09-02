@@ -36,6 +36,9 @@ internal class SceneContext(state: SceneState, val w: Int, val h: Int) {
     val tintG: Float
     val tintB: Float
 
+    /** Cloud shading, resolved from the live sky so sprite cloud slots have somewhere to land. */
+    val cloudRamp: IntArray
+
     val snowColour: Int
     val rainColour: Int
     val fogColour: Int
@@ -121,6 +124,10 @@ internal class SceneContext(state: SceneState, val w: Int, val h: Int) {
             snowTint[li] = Colour.scale(Colour.tint(Art.SNOW, tr, tg, tb), depthMul)
         }
 
+        val cloudDark = Colour.mix(haze, 0x000000, 0.18f + 0.16f * cloud)
+        val cloudLight = Colour.mix(haze, 0xFFFFFF, 0.30f - 0.22f * cloud)
+        cloudRamp = IntArray(4) { Colour.mix(cloudDark, cloudLight, it / 3f) }
+
         snowColour = Colour.tint(Art.SNOW, tr, tg, tb)
         rainColour = Colour.tint(Art.RAIN, tr, tg, tb)
         fogColour = Colour.tint(Art.FOG, tr, tg, tb)
@@ -129,6 +136,30 @@ internal class SceneContext(state: SceneState, val w: Int, val h: Int) {
         moonColour = Art.MOON
         lightningColour = Art.LIGHTNING
         tintR = tr; tintG = tg; tintB = tb
+    }
+
+    /**
+     * Resolve one sprite character to a colour.
+     *
+     * This is the indirection that lets a single drawing work at dawn, at midnight, in autumn
+     * and under snow: the artist names a slot, and its colour is decided here from the depth
+     * layer, the time of day and the season. Mirrors spriteColour() in tools/scene.js.
+     */
+    fun spriteColour(ch: Char, layerIndex: Int): Int {
+        val layer = layerIndex.coerceIn(0, canopy.size - 1)
+        return when (ch) {
+            in '0'..'7' -> canopy[layer][ch - '0']
+            in 'a'..'d' -> trunk[layer][ch - 'a']
+            in 'g'..'i' -> groundColour(ch - 'g')
+            in 'p'..'s' -> cloudRamp[ch - 'p']
+            // "Catches snow": white in winter, ordinary lit foliage otherwise, so one drawing
+            // covers every season without a separate winter sprite.
+            'w' -> Colour.mix(canopy[layer][5], snowTint[layer], season.snow)
+            'x' -> if (accent[layer] == 0) canopy[layer][4] else accent[layer]
+            'y' -> if (isDay) sunColour else moonColour
+            'z' -> starColour
+            else -> canopy[layer][4]
+        }
     }
 
     fun groundColour(i: Int): Int =

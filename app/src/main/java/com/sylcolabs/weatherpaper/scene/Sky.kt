@@ -47,6 +47,14 @@ internal object Sky {
         if (cy > ctx.horizonY + 4) return
 
         val sun = ctx.isDay
+
+        // A hand-drawn sun or moon replaces the procedural disc when one has been imported.
+        val drawn = if (sun) Sprites.SUN else Sprites.MOON
+        if (drawn != null) {
+            Forest.drawSprite(buf, ctx, drawn, cx, cy, 2, vis)
+            return
+        }
+
         val r = if (sun) 5 else 6
         val core = if (sun) ctx.sunColour else ctx.moonColour
 

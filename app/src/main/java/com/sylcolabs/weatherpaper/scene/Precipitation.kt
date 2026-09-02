@@ -54,9 +54,16 @@ internal object Weather {
             val y = (ctx.horizonY * (0.08f + rand.next() * 0.50f)).roundToInt()
             val scale = 0.55f + rand.next() * 0.95f
             val speed = (0.6f + rand.next() * 0.7f) * (0.25f + st.wind * 1.9f)
+            val pick = rand.next()
             var u = (base + secs * speed * 0.012f) % 1.4f
             if (u < 0) u += 1.4f
-            drawCloud(buf, ctx, ((u - 0.2f) * buf.w).roundToInt(), y, scale, Art.SEED + i * 131)
+            val x = ((u - 0.2f) * buf.w).roundToInt()
+            if (Sprites.CLOUDS.isNotEmpty()) {
+                val sprite = Sprites.CLOUDS[(pick * Sprites.CLOUDS.size).toInt().coerceIn(0, Sprites.CLOUDS.size - 1)]
+                Forest.drawSprite(buf, ctx, sprite, x, y, 2, 0.9f)
+                continue
+            }
+            drawCloud(buf, ctx, x, y, scale, Art.SEED + i * 131)
         }
     }
 

@@ -19,6 +19,34 @@
          + hash2(Math.floor(x / 2), Math.floor(y / 2), seed + 7) * 0.38;
   }
 
+  /** Sprites for a set, or an empty list when the artist has not drawn any yet. */
+  function spritesFor(spec, key) {
+    return (spec.sprites && spec.sprites.sets && spec.sprites.sets[key]) || [];
+  }
+
+  /**
+   * Blit a hand-drawn sprite. (x, y) is where the sprite's anchor lands - the base of the
+   * trunk for trees and scrub, the centre for clouds and decor.
+   *
+   * Sprites are never scaled: a non-integer resize is exactly what makes pixel art look
+   * mushy, so they draw at the size they were drawn at.
+   */
+  function drawSprite(f, ctx, sprite, x, y, depth, alpha) {
+    const x0 = Math.round(x) - sprite.ax;
+    const y0 = Math.round(y) - sprite.ay;
+    for (let sy = 0; sy < sprite.h; sy++) {
+      const row = sprite.rows[sy];
+      for (let sx = 0; sx < sprite.w; sx++) {
+        const ch = row[sx];
+        if (ch === '.') continue;
+        const c = S.spriteColour(ctx, ch, depth);
+        if (!c) continue;
+        if (alpha === undefined || alpha >= 1) f.px(x0 + sx, y0 + sy, c);
+        else f.blend(x0 + sx, y0 + sy, c, alpha);
+      }
+    }
+  }
+
   /**
    * One pine, drawn as a stack of flaring tiers. Each tier resets to a narrow width and flares
    * out toward its base, which is what gives the notched pine silhouette rather than a cone.
@@ -103,6 +131,7 @@
   }
 
   function drawLayer(f, spec, ctx, layer, xOffset) {
+    const sprites = spritesFor(spec, 'trees/' + layer.name);
     const rand = R.rng(spec.seed ^ Math.imul(layer.name.length + 3, 2654435761));
     const baseY = f.h * layer.baseY;
     const margin = Math.round(f.w * 0.3);
@@ -116,6 +145,8 @@
       const hFrac = layer.height[0] + rand() * (layer.height[1] - layer.height[0]);
       const wFrac = wr[0] + rand() * (wr[1] - wr[0]);
       const yJit = (rand() - 0.5) * f.h * 0.012;
+      // Drawn every iteration in both modes, so the placement sequence stays identical.
+      const pick = rand();
       const px = Math.round(x + jitter + xOffset);
       const h = Math.round(f.h * hFrac);
 
@@ -123,6 +154,13 @@
       if (edges > 0) {
         const frac = px / f.w;
         if (frac > edges && frac < 1 - edges) continue;
+      }
+      if (sprites.length) {
+        const sprite = sprites[Math.floor(pick * sprites.length) % sprites.length];
+        if (px + sprite.w >= 0 && px - sprite.w <= f.w) {
+          drawSprite(f, ctx, sprite, px, Math.round(baseY + yJit), layer.depth);
+        }
+        continue;
       }
       const w = Math.max(3, Math.round(h * wFrac));
       if (px + w < 0 || px - w > f.w) continue;
@@ -161,6 +199,7 @@
    * ground reads as an empty band between the trees and the water.
    */
   function drawScrub(f, spec, ctx) {
+    const sprites = spritesFor(spec, 'scrub');
     const layers = spec.layout.layers;
     const baseline = ctx.horizonY;
     const rand = R.rng(spec.seed ^ 0x5C2B);
@@ -174,6 +213,12 @@
       const y0 = Math.round(baseline + Math.pow(spread, 2.2) * (f.h - baseline) * 0.42);
       const rx = 2 + rand() * 5;
       const ry = 1.5 + rand() * 3;
+      const pick = rand();
+      if (sprites.length) {
+        const sprite = sprites[Math.floor(pick * sprites.length) % sprites.length];
+        drawSprite(f, ctx, sprite, x0, y0, layers[1].depth * (1 - spread) + layers[2].depth * spread);
+        continue;
+      }
       // Blended between the mid and near layer palettes, so the Kotlin port can mix the two
       // precomputed lookup entries and get an identical colour.
 
@@ -237,5 +282,5 @@
     }
   }
 
-  return { drawPine: drawPine, drawLayer: drawLayer, drawGround: drawGround, drawScrub: drawScrub, drawPool: drawPool, hash2: hash2, patchNoise: patchNoise };
+  return { drawSprite: drawSprite, spritesFor: spritesFor, drawPine: drawPine, drawLayer: drawLayer, drawGround: drawGround, drawScrub: drawScrub, drawPool: drawPool, hash2: hash2, patchNoise: patchNoise };
 });

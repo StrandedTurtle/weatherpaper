@@ -133,8 +133,83 @@ ${packed.map((b, i) => '        ' + b.toString() + 'L,' + (i % 4 === 3 ? '' : ''
 }
 `;
 
+// ---- sprites: hand-drawn art, when any has been imported ----
+const spritesPath = path.join(__dirname, '../art/sprites.json');
+const sprites = fs.existsSync(spritesPath)
+  ? JSON.parse(fs.readFileSync(spritesPath, 'utf8'))
+  : { sets: {} };
+
+function named(key, want) {
+  const list = (sprites.sets && sprites.sets[key]) || [];
+  const found = list.find(function (sp) { return sp.name === want; });
+  if (!found) return 'null';
+  const rows = found.rows.map(function (r) { return '"' + r + '"'; }).join(', ');
+  return 'Sprite(' + found.w + ', ' + found.h + ', ' + found.ax + ', ' + found.ay + ', arrayOf(' + rows + '))';
+}
+
+function setBlock(name, key) {
+  const list = (sprites.sets && sprites.sets[key]) || [];
+  if (!list.length) return '    val ' + name + ': Array<Sprite> = arrayOf()';
+  return '    val ' + name + ': Array<Sprite> = arrayOf(\n' +
+    list.map(function (sp) {
+      const rows = sp.rows.map(function (r) { return '"' + r + '"'; }).join(',\n            ');
+      return '        // ' + sp.name + ' (' + sp.w + 'x' + sp.h + ')\n' +
+        '        Sprite(' + sp.w + ', ' + sp.h + ', ' + sp.ax + ', ' + sp.ay + ', arrayOf(\n            ' +
+        rows + ',\n        )),';
+    }).join('\n') + '\n    )';
+}
+
+const spriteCount = Object.keys(sprites.sets || {}).reduce(function (n, k) {
+  return n + (sprites.sets[k] || []).length;
+}, 0);
+
+let spritesKt = `${HEADER}
+${PKG}
+
+/**
+ * Hand-drawn sprites, imported from art/sprites/ by tools/import-sprites.js.
+ *
+ * Each pixel is a *slot* character, not a colour - SceneContext.spriteColour resolves it at
+ * draw time against the depth layer, the time of day and the season. '.' is transparent.
+ *
+ * An empty set means nothing has been drawn for that part of the scene yet, and the built-in
+ * procedural art is used instead. See ART.md.
+ */
+internal object Sprites {
+
+    class Sprite(val w: Int, val h: Int, val ax: Int, val ay: Int, val rows: Array<String>)
+
+${setBlock('TREES_FAR', 'trees/far')}
+
+${setBlock('TREES_MID', 'trees/mid')}
+
+${setBlock('TREES_NEAR', 'trees/near')}
+
+${setBlock('TREES_FRAME', 'trees/frame')}
+
+${setBlock('SCRUB', 'scrub')}
+
+${setBlock('CLOUDS', 'clouds')}
+
+    val SUN: Sprite? = ${named('decor', 'sun')}
+    val MOON: Sprite? = ${named('decor', 'moon')}
+
+    /** Tree sprites for a depth layer, back to front; empty means draw the procedural pine. */
+    fun forLayer(index: Int): Array<Sprite> = when (index) {
+        0 -> TREES_FAR
+        1 -> TREES_MID
+        2 -> TREES_NEAR
+        3 -> TREES_FRAME
+        else -> emptyArray()
+    }
+}
+`;
+
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'Art.kt'), art);
 fs.writeFileSync(path.join(OUT, 'PixelFont.kt'), font);
+fs.writeFileSync(path.join(OUT, 'Sprites.kt'), spritesKt);
 console.log('generated Art.kt (' + spec.layout.layers.length + ' layers, ' + SEASONS.length + ' seasons)');
 console.log('generated PixelFont.kt (' + order.length + ' glyphs)');
+console.log('generated Sprites.kt (' + spriteCount + ' hand-drawn sprite(s)' +
+  (spriteCount === 0 ? ' - the procedural art is in use)' : ')'));
