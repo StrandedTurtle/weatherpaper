@@ -14,8 +14,8 @@ import com.sylcolabs.weatherpaper.R
 internal object Layers {
 
     /** The artwork's own pixel dimensions; 0 when nothing has been imported. */
-    const val WIDTH = 144
-    const val HEIGHT = 256
+    const val WIDTH = 0
+    const val HEIGHT = 0
 
     /** How the artwork sits in a screen of a different shape once it has been scaled to cover. */
     const val ANCHOR_BOTTOM = true
@@ -27,11 +27,7 @@ internal object Layers {
     class Layer(val name: String, val resId: Int, val parallax: Float, val sway: Float)
 
     /** Back to front. */
-    val ALL: Array<Layer> = arrayOf(
-        Layer("back", R.drawable.layer_01_back, 0.0f, 0.0f),
-        Layer("mid", R.drawable.layer_02_mid, 0.0f, 0.0f),
-        Layer("front", R.drawable.layer_03_front, 0.0f, 0.0f),
-    )
+    val ALL: Array<Layer> = arrayOf()
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
