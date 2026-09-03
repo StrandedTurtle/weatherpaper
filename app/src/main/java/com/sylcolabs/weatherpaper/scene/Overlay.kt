@@ -1,5 +1,7 @@
 package com.sylcolabs.weatherpaper.scene
 
+import android.graphics.Canvas
+import android.graphics.Paint
 import java.text.Normalizer
 import kotlin.math.roundToInt
 
@@ -19,20 +21,28 @@ internal data class OverlayConfig(
 }
 
 /**
- * The home-screen readout.
+ * The home-screen readout, drawn in the bitmap font over whatever the scene is.
  *
- * Never drawn on the lock screen: the forest beneath is identical either way, so locking reads
+ * Never drawn on the lock screen: the artwork beneath is identical either way, so locking reads
  * as the text fading out rather than the whole scene re-laying-out.
+ *
+ * Colours here are deliberately neutral - a light ink with a dark outline reads over both a
+ * bright sky and a dark canopy without knowing anything about the artwork behind it.
  */
 internal object Overlay {
 
-    private const val INK = 0xECF0EA
-    private const val OUTLINE = 0x060A08
+    private const val INK = 0xFFECF0EA.toInt()
+    private const val OUTLINE = 0xC8060A08.toInt()
 
-    /** Fold a place name down to what the 5x7 font can draw. */
+    private val paint = Paint().apply {
+        isAntiAlias = false
+        isDither = false
+        style = Paint.Style.FILL
+    }
+
+    /** Fold a place name down to what the font can draw. */
     fun normalise(text: String): String =
-        Normalizer.normalize(text.uppercase(), Normalizer.Form.NFD)
-            .replace(Regex("\\p{Mn}+"), "")
+        Normalizer.normalize(text.uppercase(), Normalizer.Form.NFD).replace(Regex("\\p{Mn}+"), "")
 
     fun conditionWord(st: SceneState): String = when {
         st.thunder -> "STORM"
@@ -73,10 +83,12 @@ internal object Overlay {
     }
 
     /**
-     * Draw a string with a 1px dark outline. The outline is what keeps the readout legible over
-     * both a bright noon sky and a near-black night canopy, with no panel muddying the art.
+     * Draw one string, with a 1px dark outline so it stays legible over anything.
+     *
+     * @param unit size of one font pixel in screen pixels, so the text stays on the same grid as
+     *             the artwork rather than being independently scaled.
      */
-    fun drawText(buf: PixelBuffer, text: String, x: Int, y: Int, scale: Int, ink: Int, outline: Int) {
+    fun drawText(canvas: Canvas, text: String, left: Float, top: Float, unit: Float) {
         val fw = PixelFont.WIDTH
         val fh = PixelFont.HEIGHT
         val cols = text.length * PixelFont.ADVANCE
@@ -89,12 +101,13 @@ internal object Overlay {
             }
         }
 
-        fun block(cx: Int, cy: Int, colour: Int, alpha: Float) {
-            for (sy in 0 until scale) for (sx in 0 until scale) {
-                buf.blend(x + cx * scale + sx, y + cy * scale + sy, colour, alpha)
-            }
+        fun cell(cx: Int, cy: Int) {
+            val x = left + cx * unit
+            val y = top + cy * unit
+            canvas.drawRect(x, y, x + unit, y + unit, paint)
         }
 
+        paint.color = OUTLINE
         for (cy in 0 until fh) for (cx in 0 until cols) {
             if (mask[cy * cols + cx]) continue
             var near = false
@@ -102,33 +115,35 @@ internal object Overlay {
                 val nx = cx + dx; val ny = cy + dy
                 if (nx in 0 until cols && ny in 0 until fh && mask[ny * cols + nx]) { near = true; break@outer }
             }
-            if (near) block(cx, cy, outline, 0.78f)
+            if (near) cell(cx, cy)
         }
-        for (cy in 0 until fh) for (cx in 0 until cols) {
-            if (mask[cy * cols + cx]) block(cx, cy, ink, 1f)
-        }
+        paint.color = INK
+        for (cy in 0 until fh) for (cx in 0 until cols) if (mask[cy * cols + cx]) cell(cx, cy)
     }
 
-    fun draw(buf: PixelBuffer, ctx: SceneContext, st: SceneState, cfg: OverlayConfig) {
+    /**
+     * @param bounds the artwork's rectangle on screen, which the readout positions itself within.
+     * @param unit size of one artwork pixel in screen pixels.
+     */
+    fun draw(canvas: Canvas, st: SceneState, cfg: OverlayConfig, bounds: android.graphics.RectF, unit: Float) {
         if (!cfg.hasContent()) return
         val ls = lines(st, cfg)
         if (ls.isEmpty()) return
 
         val size = cfg.size.coerceIn(1, 4)
-        val ink = Colour.mix(INK, Colour.tint(INK, ctx.tintR, ctx.tintG, ctx.tintB), 0.45f)
-        val gap = 3 * size
+        val gap = 3f * size * unit
 
-        var total = 0
-        for (l in ls) total += PixelFont.HEIGHT * (size + l.bump) + gap
+        var total = 0f
+        for (l in ls) total += PixelFont.HEIGHT * (size + l.bump) * unit + gap
         total -= gap
 
-        var y = (cfg.y.coerceIn(0f, 1f) * buf.h - total / 2f).roundToInt()
+        var y = bounds.top + cfg.y.coerceIn(0f, 1f) * bounds.height() - total / 2f
         for (l in ls) {
             val sc = size + l.bump
-            val w = PixelFont.width(l.text, sc)
-            val x = (cfg.x.coerceIn(0f, 1f) * buf.w - w / 2f).roundToInt()
-            drawText(buf, l.text, x, y, sc, ink, OUTLINE)
-            y += PixelFont.HEIGHT * sc + gap
+            val w = PixelFont.width(l.text, sc) * unit
+            val x = bounds.left + cfg.x.coerceIn(0f, 1f) * bounds.width() - w / 2f
+            drawText(canvas, l.text, x, y, sc * unit)
+            y += PixelFont.HEIGHT * sc * unit + gap
         }
     }
 }

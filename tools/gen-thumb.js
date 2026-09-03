@@ -1,22 +1,42 @@
 'use strict';
-// Renders the wallpaper picker thumbnail from the real scene, so the tile in Android's
-// wallpaper list is the actual art rather than a hand-drawn stand-in.
+// Builds the tile shown in Android's wallpaper picker by flattening the imported layers, so it
+// is always the real artwork. Falls back to a plain placeholder when nothing is imported.
 const fs = require('fs');
 const path = require('path');
 const { encodePNG } = require('./png.js');
-const C = require('./compose.js');
+const { decodePNG } = require('./png-decode.js');
 
-const spec = JSON.parse(fs.readFileSync(path.join(__dirname, '../art/scene.json'), 'utf8'));
+const ROOT = path.join(__dirname, '..');
+const OUT = path.join(ROOT, 'app/src/main/res/drawable-nodpi/wallpaper_thumb.png');
+const manifest = fs.existsSync(path.join(ROOT, 'art/layers.json'))
+  ? JSON.parse(fs.readFileSync(path.join(ROOT, 'art/layers.json'), 'utf8'))
+  : { layers: [] };
 
-// Golden hour shows off the sky ramp, the silhouettes and the pool reflection at once.
-const state = {
-  hour: 19.1, sunrise: 6.2, sunset: 19.8, cloud: 0.25, precip: 'none',
-  wind: 0.2, season: 'autumn', condition: 'auto', tempC: 13, date: new Date('2026-09-02'),
-};
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
 
-const w = 132, h = 264, scale = 3;
-const { frame } = C.renderScene(spec, state, w, h, 1500, {});
-const out = path.join(__dirname, '../app/src/main/res/drawable-nodpi/wallpaper_thumb.png');
-fs.mkdirSync(path.dirname(out), { recursive: true });
-fs.writeFileSync(out, encodePNG(frame.d, w, h, scale));
-console.log('thumbnail: ' + (fs.statSync(out).size / 1024).toFixed(1) + ' KB at ' + (w * scale) + 'x' + (h * scale));
+if (!manifest.layers || manifest.layers.length === 0) {
+  const w = 96, h = 192, rgb = new Uint8Array(w * h * 3);
+  for (let i = 0; i < w * h; i++) { rgb[i * 3] = 0x10; rgb[i * 3 + 1] = 0x13; rgb[i * 3 + 2] = 0x14; }
+  fs.writeFileSync(OUT, encodePNG(rgb, w, h, 2));
+  console.log('no layers imported - wrote a plain placeholder thumbnail');
+  process.exit(0);
+}
+
+const W = manifest.width, H = manifest.height;
+const out = new Uint8Array(W * H * 3);
+for (let i = 0; i < W * H; i++) { out[i * 3] = 0x10; out[i * 3 + 1] = 0x13; out[i * 3 + 2] = 0x14; }
+
+for (const layer of manifest.layers) {
+  const img = decodePNG(fs.readFileSync(path.join(ROOT, 'art/layers', layer.source)));
+  for (let i = 0; i < W * H; i++) {
+    const a = img.rgba[i * 4 + 3] / 255;
+    if (a <= 0) continue;
+    for (let c = 0; c < 3; c++) {
+      out[i * 3 + c] = Math.round(out[i * 3 + c] * (1 - a) + img.rgba[i * 4 + c] * a);
+    }
+  }
+}
+
+const scale = Math.max(1, Math.round(400 / H));
+fs.writeFileSync(OUT, encodePNG(out, W, H, scale));
+console.log('thumbnail: ' + (fs.statSync(OUT).size / 1024).toFixed(1) + ' KB at ' + (W * scale) + 'x' + (H * scale));

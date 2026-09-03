@@ -2,7 +2,8 @@
 <resources>
     <string name="app_name">WeatherPaper</string>
     <string name="app_author">Sylco Labs</string>
-    <string name="app_description">A pixel-art forest that follows your local weather, time of day and season.</string>
+    <string name="app_description">A hand-drawn pixel-art live wallpaper driven by local weather.</string>
     <string name="settings_title">WeatherPaper settings</string>
     <string name="attribution">Weather data by Open-Meteo.com (CC BY 4.0)</string>
+    <string name="no_art">No artwork imported yet — see ART.md.</string>
 </resources>

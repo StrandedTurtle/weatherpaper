@@ -1,3 +1,3 @@
-# The wallpaper service and settings activity are referenced from the manifest only.
--keep class com.sylcolabs.weatherpaper.ForestWallpaperService { *; }
+# Referenced from the manifest only.
+-keep class com.sylcolabs.weatherpaper.WeatherPaperService { *; }
 -keep class com.sylcolabs.weatherpaper.ui.SettingsActivity { *; }

@@ -29,21 +29,6 @@ internal data class SceneState(
     val place: String? = null,
     val moonPhase: Float = 0.5f,
 ) {
-    /**
-     * Fields that change what the cached layers look like. Time is bucketed rather than exact:
-     * the sky only needs redrawing when the sun has actually moved enough to see.
-     */
-    fun cacheKey(): Int {
-        var k = (sunAltitude() * 40f).toInt()
-        k = k * 31 + (cloud * 12f).toInt()
-        k = k * 31 + precip.ordinal
-        k = k * 31 + condition.ordinal
-        k = k * 31 + season.ordinal
-        k = k * 31 + (if (hour < (sunrise + sunset) / 2f) 1 else 0)
-        k = k * 31 + (moonPhase * 24f).toInt()
-        return k
-    }
-
     /** Normalised sun altitude, -1..1. Drives sky colour, foliage tint and star visibility. */
     fun sunAltitude(): Float {
         val dayLen = sunset - sunrise
@@ -55,10 +40,6 @@ internal data class SceneState(
     }
 
     val isDay: Boolean get() = hour in sunrise..sunset
-
-    /** True while any part of the scene is still moving; when false the render loop can stop. */
-    fun isAnimated(): Boolean =
-        precip != Precipitation.NONE || thunder || wind > 0.06f || cloud > 0.08f || condition == SkyCondition.FOG
 
     companion object {
         /** WMO 4677 weather codes, as returned by Open-Meteo's `weather_code`. */

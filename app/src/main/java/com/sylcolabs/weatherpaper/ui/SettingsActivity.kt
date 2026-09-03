@@ -23,6 +23,7 @@ import android.widget.Toast
 import com.sylcolabs.weatherpaper.Prefs
 import com.sylcolabs.weatherpaper.R
 import com.sylcolabs.weatherpaper.SceneStates
+import com.sylcolabs.weatherpaper.scene.Layers
 import com.sylcolabs.weatherpaper.scene.OverlayConfig
 import com.sylcolabs.weatherpaper.weather.LocationProvider
 import com.sylcolabs.weatherpaper.weather.OpenMeteoClient
@@ -68,7 +69,10 @@ class SettingsActivity : Activity() {
             }
         }
         root.addView(preview, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-        root.addView(caption("Drag the preview to move the readout."))
+        root.addView(caption(
+            if (Layers.isEmpty) getString(R.string.no_art)
+            else "Drag the preview to move the readout."
+        ))
 
         root.addView(heading("Home-screen readout"))
         root.addView(caption("Shown on the home screen only — the lock screen stays clear."))

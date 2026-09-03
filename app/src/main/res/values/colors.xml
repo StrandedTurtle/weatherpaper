@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <color name="forest_deep">#FF0F2419</color>
-    <color name="forest_night">#FF06100C</color>
+    <!-- Neutral chrome only. Scene colours come entirely from the imported artwork. -->
+    <color name="backdrop">#FF101314</color>
+    <color name="chrome_bg">#FF0E1112</color>
+    <color name="chrome_fg">#FFC8D0CC</color>
+    <color name="chrome_muted">#FF7C8A84</color>
+    <color name="chrome_accent">#FF8FB8A2</color>
 </resources>

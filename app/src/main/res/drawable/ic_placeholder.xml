@@ -1,0 +1,11 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- Placeholder mark, deliberately not a picture of anything. Replace once there is
+         artwork to draw a real icon from. -->
+    <path
+        android:fillColor="#8A9A90"
+        android:pathData="M36,36 h12 v12 h-12 z M60,36 h12 v12 h-12 z M36,60 h12 v12 h-12 z M60,60 h12 v12 h-12 z" />
+</vector>
