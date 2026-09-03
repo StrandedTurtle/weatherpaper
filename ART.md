@@ -1,228 +1,243 @@
-# Replacing the art
+# Art direction — the layered scene
 
-Everything you see in the wallpaper is either **hand-drawn sprites** or **generated from
-`art/scene.json`**. This is how to swap the drawn parts for your own without touching the app
-code or breaking the build.
+You compose the whole daytime scene in Aseprite as layers. I fit the app to what you drew.
+This replaces the earlier per-sprite workflow, which made you draw around the code's folder
+structure instead of composing properly.
 
-The short version: draw PNGs using only the colours in `art/palette.gpl`, drop them in
-`art/sprites/`, run two commands, done.
-
----
-
-## The one rule
-
-**Sprites are palette-indexed, not literal colour.**
-
-Each pixel you draw names a *slot* — "canopy shade 5", "trunk shade 2", "catches snow" — and the
-renderer decides that slot's actual colour at draw time from three things:
-
-- **Depth layer** — distant trees are hazier and bluer, foreground trees are near-black silhouette
-- **Time of day** — foliage goes blue-black at night and warm at golden hour
-- **Season** — spring, summer, autumn and winter shift the whole ramp
-
-This is why **one drawing covers every season and every time of day**. You do not draw a summer
-tree and a winter tree; you draw a tree, and mark which pixels catch snow and which turn with the
-season. If you draw in arbitrary RGB instead, the importer rejects it — and rightly so, because a
-literal colour cannot be retinted.
+> **Status.** The palette, templates and guides in this document exist now — you can start
+> drawing today. The layer importer does not exist yet: I build it when your first export
+> lands, sized to what you actually drew. Nothing in the repo will fight you in the meantime;
+> the current procedural art keeps the app running until yours replaces it.
 
 ---
 
-## Setup
+## Everything you'll draw, in order
 
-```sh
-git clone https://github.com/StrandedTurtle/weatherpaper
-cd weatherpaper
-node tools/gen-palette.js      # writes art/palette.gpl + art/palette-reference.png
-```
+**Phase 1 — the base daytime scene.** One Aseprite file, one layer per band below. This is the
+bulk of the work and it is all you need to do before handing it back.
 
-Node 18+ is the only tool needed for art work. There are no npm dependencies — nothing to install.
+**Phase 2 — the moving pieces.** Three things cannot live in a static layer because they travel
+independently across the sky. Small, and you only do them once.
 
-Then in your editor:
+| | What | Size | Count |
+|---|---|---|---|
+| **1** | The scene layers (table further down) | 160 × 288 each | 5 essential, 2 optional |
+| **2** | Clouds | ~24–56 × 10–24 | 4–6 |
+| **2** | Sun | ~12–18 square | 1 |
+| **2** | Moon — draw it **full**, the code cuts the phase | ~12–18 square | 1 |
+| *opt* | Launcher icon | 108 × 108 | 1 |
+| *opt* | Replacement 5×7 readout font | 5 × 7 per glyph | 44 |
 
-- **Aseprite** — Palette menu → *Load Palette* → `art/palette.gpl`. Work in RGB mode; Indexed also
-  works.
-- **GIMP / Krita** — Windows → Dockable Dialogs → Palettes → import `art/palette.gpl`.
-- **Piskel / Pixilart** — no `.gpl` import; open `art/palette-reference.png` alongside and pick
-  colours from it.
-
-`art/palette-reference.png` shows every slot with its name. Keep it open while you draw.
-
----
-
-## What to draw, and how big
-
-Sprites are **never rescaled** — a non-integer resize is exactly what makes pixel art look mushy,
-so they are drawn at the size they appear. The virtual canvas a real phone produces is always
-about **280px tall and 120–160px wide**, whatever the screen resolution, so fixed sizes hold up
-across devices.
-
-| Folder | What it is | Height | Typical width | Anchor |
-|---|---|---|---|---|
-| `art/sprites/trees/far/` | Distant treeline on the horizon | **15–27 px** | ~45–60% of height | bottom centre |
-| `art/sprites/trees/mid/` | The body of the forest | **32–50 px** | ~40–55% of height | bottom centre |
-| `art/sprites/trees/near/` | Nearer trees, edges only | **64–92 px** | ~35–50% of height | bottom centre |
-| `art/sprites/trees/frame/` | Tall silhouettes framing the screen | **218–300 px** | ~20–30% of height | bottom centre |
-| `art/sprites/scrub/` | Low bushes along the treeline | 4–12 px | 6–16 px | bottom centre |
-| `art/sprites/clouds/` | Drifting clouds | 8–20 px | 20–50 px | centre |
-| `art/sprites/decor/` | `sun.png` and `moon.png` only | 8–16 px | 8–16 px | centre |
-
-Put **several variants in each folder** — the renderer picks between them per tree, and that
-variety is what stops the forest looking stamped. Three to six per layer is plenty.
-
-The importer prints the expected range and warns if a sprite is well outside it. File names do
-not matter (except `sun.png` / `moon.png`), and sprites are trimmed to their drawn bounds, so
-canvas padding is harmless.
-
-### Depth is your job too
-
-The renderer handles haze and darkening per layer, but **contrast is yours**. Far trees should be
-drawn with fewer shades and softer edges; framing trees are read as silhouettes, so keep them to
-one or two of the darkest canopy shades and let the shape do the work. Detail on a framing tree
-mostly disappears once the depth tint is applied.
+**That's the whole list.** There is no night version, no winter version, no rainy version. Those
+all come out of the base scene automatically — see *What you don't draw*.
 
 ---
 
-## The slots
+## The one constraint that stays
 
-Draw with these and nothing else. `#RRGGBB` values are in `art/palette.gpl`.
+**Draw only with the colours in `art/palette.gpl`.**
 
-| Slot | What it becomes |
+Each palette colour names a *slot* — "canopy shade 5", "trunk shade 2" — not a final colour. The
+renderer decides what that slot actually looks like at draw time, from the depth layer, the sun's
+altitude and the season.
+
+That single indirection is what buys you every derived state for free. A literal RGB value cannot
+be retinted; a slot can. It is the reason you draw one daytime scene rather than sixteen.
+
+Load `art/palette.gpl` in Aseprite via **Palette → Load Palette**. Keep
+`art/palette-reference.png` open beside you — it names all 25 slots.
+
+If you want different greens, change `palette` in `art/scene.json`, re-run
+`node tools/gen-palette.js`, and reload it. Everything you have already drawn follows the new
+colours automatically, because your pixels reference slots and not values.
+
+---
+
+## Canvas
+
+**160 × 288.** Every layer is this exact size. Start from `art/template/scene-160x288.png`.
+
+Drop `art/template/guides.png` in as a top layer for reference, then **hide or delete it before
+exporting** — it is drawn in pure red and yellow deliberately, so if it ever survives into an
+export the importer rejects it by name instead of quietly treating it as artwork.
+
+| | |
 |---|---|
-| **CANOPY 0–7** | Foliage, darkest to lightest. Your main range — most of a tree is 2–6. |
-| **TRUNK 0–3** | Bark, darkest to lightest. |
-| **GROUND 0–2** | Forest floor tones, for scrub and undergrowth. |
-| **CLOUD 0–3** | Cloud shading, dark to light. Resolved live from the sky, so a cloud drawn once looks right at noon and at dusk. |
-| **SNOW** | "This pixel catches snow." White in winter, ordinary lit foliage the rest of the year — so put it on upward-facing branches and leave it. |
-| **ACCENT** (magenta) | "This pixel turns with the season." Amber in autumn, blossom in spring, ordinary foliage in summer and winter. Scatter it through the canopy. |
-| **GLOW** | Sun and moon body. |
-| **STAR** | Starlight. |
+| **Always visible** | columns **20–139**, rows **21–287** |
+| **Bleed** | 20 columns each side, 21 rows off the top |
+| **Horizon guide** | row **172** |
 
-Anything with **alpha below 50% is transparent**. Anything else that is not an exact palette
-colour is an error, and the importer tells you which pixel and which slot you probably meant:
+The bleed is not padding. It is what parallax slides into as you swipe the home screen, and what
+wider screens (tablets, unfolded foldables) reveal. Draw it properly — just don't put anything
+you'd miss out there.
 
-```
-error: art/sprites/trees/mid/pine-a.png: colour #2E5837 at (12,7) is not in the palette.
-       Closest slot is CANOPY 6. Load art/palette.gpl and use only those colours.
-```
+The app scales by a whole number only and crops to fit, so your pixels stay exact squares on
+every device. On a 1080 × 2400 phone one drawn pixel is 9 screen pixels.
 
-That is almost always anti-aliasing or a soft brush. **Turn off anti-aliasing** — use a
-hard 1px pencil.
+**The horizon guide is a suggestion, not a rule.** Put the treeline where it looks right and tell
+me the row; I'll move the code's constant to match. Same for the pool position and the layer
+bands — the drawing leads.
 
 ---
 
-## The loop
+## The scene layers
 
-```sh
-node tools/import-sprites.js   # validate drawings -> art/sprites.json
-node tools/build-preview.js    # rebuild the browser preview
-open tools/preview/index.html  # drive every weather/time/season state with sliders
-```
+Draw order, back to front. Name them with the numeric prefix so ordering survives the export.
 
-Iterate there until it looks right — no compiling, no phone. Then push it into the app:
-
-```sh
-node tools/gen-kotlin.js       # art/*.json -> Art.kt, PixelFont.kt, Sprites.kt
-node tools/gen-thumb.js        # regenerate the wallpaper picker thumbnail
-```
-
-Commit and push; CI builds an installable APK (Actions → latest run → download the artifact).
-To build locally instead you need Android Studio or the SDK, then `./gradlew assembleRelease`.
-
-Contact sheets are quicker than the preview for comparing states side by side:
-
-```sh
-node tools/shoot.js            # art/shots/{time,weather,seasons}.png
-node tools/shoot.js seasons    # just one suite
-```
-
-### Try it in one step
-
-```sh
-cp art/examples/pine-mid.png art/sprites/trees/mid/
-node tools/import-sprites.js && node tools/build-preview.js
-```
-
-`art/examples/pine-mid.png` is a working sprite — open it in your editor to see how the slots are
-used in practice. Delete it from `art/sprites/` when you have your own.
-
----
-
-## Falling back
-
-**Every set is independent.** An empty folder means that part of the scene uses the built-in
-procedural art, so you can replace one layer at a time and always have something that runs. A
-sensible order is `trees/mid` first (most visible), then `trees/frame`, then `near`, `far`,
-`scrub`, `clouds`, `decor`.
-
-`git status` will show `art/sprites.json` and the generated Kotlin changing — both are committed
-on purpose, because CI builds without running Node.
-
----
-
-## The rest of the art
-
-Not everything is a sprite. These live in **`art/scene.json`**, which is the single source of
-truth for both the preview and the app. Edit it and re-run `gen-kotlin.js`.
-
-**Palette** (`palette`) — the 8 canopy shades, 4 trunk, 3 ground, and the accents. Changing these
-changes every sprite at once, since sprites only reference slots. If you change the palette,
-re-run `gen-palette.js` and reload it in your editor.
-
-**Sky** (`skyRamps`) — four gradients: `night`, `dawn`, `day`, `dusk`. Any number of stops; they
-are resampled and cross-faded by sun altitude. `ditherStep` sets how chunky the sky banding is —
-raise it for a more retro look, lower it for smoother.
-
-**Seasons** (`seasons`) — each has an RGB `tint` multiplier applied to all foliage, a `snow`
-amount (0–1), and an `accent` colour with an `accentChance`.
-
-**Layout** (`layout`) — `horizon`, the pool position, and the depth layers. Per layer: `depth`
-(0 = nearest, 1 = furthest — drives haze and darkening), `baseY` (where trees stand, as a
-fraction of height), `spacing` (px between trees), `sway`, `parallax`, and `edgesOnly` (keeps a
-layer out of the middle, which is what leaves the clearing open).
-
-**Font** (`font`) — the 5×7 readout font, as ASCII art. `#` is ink, `.` is empty, rows separated
-by `/`. Edit it directly; it is meant to be readable.
-
-**Procedural fallbacks** — if you would rather tune the generated trees than draw them, the pine
-generator is `drawPine()` in `tools/forest.js`, mirrored in `Forest.kt`. Change the JS, check it
-in the preview, then port the same change to the Kotlin.
-
----
-
-## Keeping the two renderers in step
-
-The art is drawn twice: once in JavaScript for the preview, once in Kotlin for the app. They are
-deliberately structured the same way so changes port one-to-one.
-
-| Reference (`tools/`) | Android (`app/.../scene/`) | |
+| File | What it is | Movement |
 |---|---|---|
-| `render.js` | `Draw.kt` | colour, ramps, PRNG, dithering |
-| `scene.js` | `Palette.kt`, `Sky.kt` | state → colour, sky, stars, sun/moon |
-| `forest.js` | `Forest.kt` | trees, depth layers, ground, scrub, pool |
-| `weather.js` | `Precipitation.kt` | cloud, rain, snow, fog, lightning |
-| `overlay.js` | `Overlay.kt` | outlined pixel text |
-| `compose.js` | `SceneRenderer.kt` | pass order and layer caching |
+| `01-backdrop.png` | *Optional.* Distant hills, ridgelines or mist behind the treeline | still |
+| `02-treeline.png` | The far forest band sitting on the horizon | still |
+| `03-ground.png` | Clearing floor, from the horizon to the bottom edge | still |
+| `04-water.png` | *Optional.* The pool — see **MIRROR** below | still |
+| `05-forest-mid.png` | The body of the forest. Most of what the eye reads as "forest" | sways gently |
+| `06-forest-near.png` | Nearer trees, typically framing the sides | sways more |
+| `07-frame.png` | Big foreground silhouettes at the screen edges | sways most, strongest parallax |
 
-**You only need to touch these if you change how art is drawn, not what is drawn.** Swapping
-sprites, palettes, ramps, seasons and layout needs no code changes at all.
+Five essential, two optional. Anything you leave out keeps the current procedural version until
+you get to it, so you can hand me `05-forest-mid.png` alone and see it running.
 
-If you do edit a renderer: both use the same PRNG (`mulberry32`) and must make the *same number
-of random calls in the same order*, or the preview and the device will place trees differently.
+**Depth is yours to draw.** The code applies haze and darkening per layer, but contrast is an
+artistic decision: far layers want fewer shades and softer silhouettes, the framing layer wants
+one or two of the darkest canopy shades and shape doing all the work. Fine detail on the framing
+layer mostly vanishes once depth tinting lands.
 
-`Art.kt`, `PixelFont.kt` and `Sprites.kt` are **generated**. Never edit them by hand — your
-changes will be overwritten the next time anyone runs the generator.
+**The moving layers need loose edges.** `05`–`07` slide by a few pixels. Keep their left and
+right extremes as ordinary foliage or trunk rather than a distinctive feature, so nothing
+recognisable drifts in and out.
+
+---
+
+## Markers to paint *as you draw*
+
+Four slots are instructions rather than colours. They have to go in while you're drawing the base
+scene — they cannot be added afterwards without going back over every layer.
+
+**SNOW** — "snow settles here in winter." White in winter, ordinary lit foliage the rest of the
+year. Put it along upward-facing branches, the tops of rocks, and across the ground. Paint it as
+if drawing a light snowfall; the code fades it in and out with the season.
+
+**ACCENT** (magenta) — "this turns with the season." Amber in autumn, blossom in spring, plain
+foliage in summer and winter. Scatter it through the canopy in clumps rather than evenly — think
+5–25% of the foliage on the mid layers, and much less on the near-black framing layer, where
+colour reads as noise.
+
+**MIRROR** (cyan) — "fill this with a live reflection of the sky." Use it for the pool's open
+surface. You still draw the water's edge, ripples, reeds and anything floating in normal colours;
+only the MIRROR region is replaced. This is how the water keeps changing colour through the day
+instead of freezing at whatever you painted. If you'd rather art-direct the water completely,
+just don't use MIRROR — but you lose the dawn and dusk reflection, which is one of the better
+effects in the scene.
+
+**LAMP** (orange) — "dark by day, warm glow after dusk." Cabin windows, a lantern, a campfire.
+Entirely optional, but it is the cheapest way to make the night scene feel inhabited.
+
+---
+
+## What you don't draw
+
+Not because you can't, but because these must stay dynamic — freezing them into a drawing is what
+would make the wallpaper feel dead.
+
+- **The sky gradient.** It ramps continuously through night, dawn, day and dusk. Leave the sky
+  area transparent in every layer.
+- **Rain, snowfall, fog, lightning.** Particles and bands generated per frame, driven by live
+  weather.
+- **Stars.** Single pixels, faded by sun altitude.
+- **Every retint.** Night, golden hour, overcast, all four seasons, and the depth haze.
+
+**You can still art-direct the sky.** Give me four short colour ramps — `night`, `dawn`, `day`,
+`dusk` — as 3–5 stops each, either as hex values or a small PNG strip. The code cross-fades
+between them by the sun's real altitude. That's the only way to design the sky and keep it alive.
+The current ones are in `skyRamps` in `art/scene.json` if you want a starting point.
+
+---
+
+## Exporting from Aseprite
+
+Layers must come out **aligned and untrimmed**, all 160 × 288. This is the single most common way
+to lose a day's work.
+
+Command line, which is the reliable route:
+
+```sh
+aseprite -b scene.aseprite --split-layers --ignore-empty --save-as art/layers/{layer}.png
+```
+
+Or in the GUI: **File → Export → Export As**, then
+
+- **Split Layers** — on
+- **Trim Sprite** and **Trim Cels** — **off** (this is the one that bites)
+- **Resize** — 100%
+- **Merge Duplicate Frames** — irrelevant, single frame
+
+Then check: every exported PNG should be exactly 160 × 288, and the guide layer should not be
+among them.
+
+---
+
+## Handing it back to me
+
+Send the layer PNGs and tell me three things:
+
+1. **Which row you put the horizon on**, if it isn't 172.
+2. **Whether you used MIRROR** for the water.
+3. **Anything you deliberately left for later** — I'll leave those on the procedural version
+   rather than shipping a gap.
+
+I'll come back with it running in the browser preview so you can see every hour, season and
+weather state before anything touches the phone.
+
+---
+
+## What I'll build when the layers land
+
+So there are no surprises about what changes:
+
+- **`tools/import-layers.js`** — validates each layer against the palette and writes an indexed
+  form. It will have a `--snap` mode that maps near-miss colours to the closest slot and reports
+  them, rather than hard-failing on a stray anti-aliased pixel.
+- **Layers ship as PNGs** in `res/`, decoded once at first draw, rather than baked into Kotlin
+  source — a full-scene layer is far too large to inline sensibly.
+- **A fixed 160 × 288 virtual canvas.** Today the canvas size shifts with the device, which is
+  fine for procedural art and wrong for hand-drawn art. Whole-number scaling and centre-cropping
+  move to the blit stage, so what you draw is exactly what appears.
+- **`drawLayer` becomes a blit** of your image at its sway and parallax offset, replacing the
+  per-tree placement. Simpler and cheaper than what's there now.
+- **MIRROR and LAMP resolution** in `SceneContext.spriteColour`, both trivial additions.
+- The procedural pine generator stays as the fallback for any layer you haven't drawn.
+
+The cached-layer architecture already works exactly this way — whole layers blitted at an offset —
+so this simplifies the renderer rather than complicating it.
 
 ---
 
 ## Gotchas
 
-- **Anti-aliasing is the usual culprit.** Hard 1px pencil, no soft brushes, no opacity below 100%
-  except fully transparent.
-- **Don't scale sprites in your editor.** Draw at final size. Scaling by 1.5× destroys the grid.
-- **Interlaced PNGs are rejected** — re-export without interlacing.
-- **8-bit PNGs only** (greyscale, RGB, indexed or with alpha — all fine). 16-bit is rejected.
-- **Semi-transparent pixels don't exist.** Alpha is a threshold: below 50% is empty, above is
-  fully opaque.
-- **The magenta ACCENT slot is a marker, not a colour.** It never renders magenta.
-- After changing the palette, **re-run `gen-palette.js` and reload it in your editor**, or your
-  next drawing will be full of near-miss colours.
+- **Trim must be off on export.** Layers that don't share the same 160 × 288 origin will not line
+  up, and there is no way to recover the alignment afterwards.
+- **Anti-aliasing is the usual palette failure.** Hard 1px pencil, no soft brushes, no partial
+  opacity. Alpha is a threshold: under 50% is empty, over is fully opaque.
+- **Don't scale in the editor.** Draw at final size; a 1.5× resize destroys the grid.
+- **Interlaced and 16-bit PNGs are rejected.** Aseprite's defaults are fine.
+- **The magenta, cyan and orange markers never render as those colours.** They are instructions.
+- **Delete the guide layer before exporting.**
+- After changing the palette, re-run `gen-palette.js` and reload it in Aseprite, or your next
+  drawing session will be full of near-miss colours.
+
+---
+
+## Reference
+
+```sh
+node tools/gen-palette.js     # palette.gpl + palette-reference.png
+node tools/gen-template.js    # the 160x288 canvas and guides
+node tools/shoot.js           # contact sheets of every state -> art/shots/
+node tools/build-preview.js   # self-contained preview -> tools/preview/index.html
+```
+
+Node 18+ is all that's needed for art work. There are no npm dependencies.
+
+The per-sprite pipeline described previously still exists (`tools/import-sprites.js`,
+`art/sprites/`) if you ever want individually placed trees rather than composed layers. It is not
+the route we're taking.

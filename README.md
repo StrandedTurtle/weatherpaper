@@ -80,25 +80,23 @@ no account, no API key, and no network traffic beyond the weather lookup.
 
 ## Making the art your own
 
-**→ See [ART.md](ART.md) for the full guide.**
+**→ See [ART.md](ART.md) for the full direction.**
 
-Draw PNGs using the palette in `art/palette.gpl`, drop them in `art/sprites/`, and run two
-commands. Sprites are palette-*indexed*: each pixel names a slot like "canopy shade 5" or
-"catches snow", and the renderer resolves it at draw time against depth, time of day and season —
-so **one drawing covers every season and every hour** with no per-variant work.
+The scene is composed as layers in Aseprite at a fixed 160 × 288 canvas, drawn with the palette
+in `art/palette.gpl`. Sprites are palette-*indexed*: each pixel names a slot like "canopy shade 5"
+or "snow settles here", and the renderer resolves it at draw time against depth, sun altitude and
+season — so **one daytime drawing covers every hour and every season** with no variants.
 
-Every sprite set falls back to the built-in procedural art when empty, so you can replace the
-forest one layer at a time and always have something that runs.
+There is no night version, no winter version and no rainy version to draw. Those are derived.
 
 ```sh
-node tools/gen-palette.js      # the palette to load into Aseprite/GIMP/Piskel
-node tools/import-sprites.js   # validate your drawings -> art/sprites.json
+node tools/gen-palette.js      # the palette to load into Aseprite/GIMP/Krita
+node tools/gen-template.js     # the 160x288 canvas and its guides
 node tools/build-preview.js    # then open tools/preview/index.html
-node tools/gen-kotlin.js       # push it all into the app
 ```
 
-`tools/preview/index.html` is a self-contained page that runs the real renderer with sliders for
-time, cloud, wind, temperature, precipitation and season — so you can judge every state in
+`tools/preview/index.html` is a self-contained page running the real renderer, with sliders for
+time, cloud, wind, temperature, precipitation and season — so every state can be judged in
 seconds without building anything.
 
 Node 18+ is all you need for art work. There are no npm dependencies.

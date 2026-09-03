@@ -56,4 +56,34 @@ function encodePNG(rgb, w, h, scale = 1) {
   ]);
 }
 
-module.exports = { encodePNG };
+/** rgba: Uint8Array of w*h*4. Same as encodePNG but keeps the alpha channel. */
+function encodePNGA(rgba, w, h, scale = 1) {
+  const ow = w * scale;
+  const oh = h * scale;
+  const raw = Buffer.alloc(oh * (ow * 4 + 1));
+  let p = 0;
+  for (let y = 0; y < oh; y++) {
+    raw[p++] = 0;
+    const sy = (y / scale) | 0;
+    for (let x = 0; x < ow; x++) {
+      const si = (sy * w + ((x / scale) | 0)) * 4;
+      raw[p++] = rgba[si];
+      raw[p++] = rgba[si + 1];
+      raw[p++] = rgba[si + 2];
+      raw[p++] = rgba[si + 3];
+    }
+  }
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(ow, 0);
+  ihdr.writeUInt32BE(oh, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6; // colour type: truecolour with alpha
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk('IHDR', ihdr),
+    chunk('IDAT', zlib.deflateSync(raw, { level: 9 })),
+    chunk('IEND', Buffer.alloc(0)),
+  ]);
+}
+
+module.exports = { encodePNG, encodePNGA };

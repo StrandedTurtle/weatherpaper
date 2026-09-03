@@ -23,6 +23,7 @@
     'g': ['ground', 0], 'h': ['ground', 1], 'i': ['ground', 2],
     'p': ['cloud', 0], 'q': ['cloud', 1], 'r': ['cloud', 2], 's': ['cloud', 3],
     'w': ['snow', 0], 'x': ['accent', 0], 'y': ['glow', 0], 'z': ['star', 0],
+    'm': ['mirror', 0], 'l': ['lamp', 0],
   };
 
   const TRANSPARENT = '.';
@@ -42,6 +43,9 @@
     map['snow0'] = spec.palette.accent.snow;
     map['accent0'] = '#FF2FD0';   // marker: becomes autumn amber / spring blossom at runtime
     map['glow0'] = spec.palette.accent.sun;
+    // Markers, not colours: these two are replaced entirely at draw time.
+    map['mirror0'] = '#00E5FF';   // filled with the live reflection of the sky
+    map['lamp0'] = '#FF9A2E';     // dark by day, warm glow after dusk
     map['star0'] = spec.palette.accent.star;
     return map;
   }
@@ -57,7 +61,10 @@
   }
 
   function label(slot) {
-    const single = { snow: 'SNOW', accent: 'ACCENT', glow: 'GLOW', star: 'STAR' };
+    const single = {
+      snow: 'SNOW', accent: 'ACCENT', glow: 'GLOW', star: 'STAR',
+      mirror: 'MIRROR', lamp: 'LAMP',
+    };
     return single[slot.channel] || (slot.channel.toUpperCase() + ' ' + slot.index);
   }
 
