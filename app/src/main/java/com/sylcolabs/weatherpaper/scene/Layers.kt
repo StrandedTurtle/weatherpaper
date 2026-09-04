@@ -14,8 +14,8 @@ import com.sylcolabs.weatherpaper.R
 internal object Layers {
 
     /** The artwork's own pixel dimensions; 0 when nothing has been imported. */
-    const val WIDTH = 0
-    const val HEIGHT = 0
+    const val WIDTH = 160
+    const val HEIGHT = 288
 
     /** How the artwork sits in a screen of a different shape once it has been scaled to cover. */
     const val ANCHOR_BOTTOM = true
@@ -27,7 +27,16 @@ internal object Layers {
     class Layer(val name: String, val resId: Int, val parallax: Float, val sway: Float)
 
     /** Back to front. */
-    val ALL: Array<Layer> = arrayOf()
+    val ALL: Array<Layer> = arrayOf(
+        Layer("sky", R.drawable.layer_01_sky, 0.0f, 0.0f),
+        Layer("far-ridge", R.drawable.layer_02_far_ridge, 0.0f, 0.0f),
+        Layer("mid-forest", R.drawable.layer_03_mid_forest, 0.0f, 0.0f),
+        Layer("ground", R.drawable.layer_04_ground, 0.0f, 0.0f),
+        Layer("river", R.drawable.layer_05_river, 0.0f, 0.0f),
+        Layer("near-forest", R.drawable.layer_06_near_forest, 0.0f, 0.0f),
+        Layer("shrubs", R.drawable.layer_07_shrubs, 0.0f, 0.0f),
+        Layer("frame", R.drawable.layer_08_frame, 0.0f, 0.0f),
+    )
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
