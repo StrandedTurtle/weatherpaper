@@ -29,13 +29,14 @@ internal object Layers {
     /** Back to front. */
     val ALL: Array<Layer> = arrayOf(
         Layer("sky", R.drawable.layer_01_sky, 0.0f, 0.0f),
-        Layer("far-ridge", R.drawable.layer_02_far_ridge, 0.0f, 0.0f),
-        Layer("mid-forest", R.drawable.layer_03_mid_forest, 0.0f, 0.0f),
-        Layer("ground", R.drawable.layer_04_ground, 0.0f, 0.0f),
-        Layer("cabin", R.drawable.layer_05_cabin, 0.0f, 0.0f),
-        Layer("near-forest", R.drawable.layer_06_near_forest, 0.0f, 0.0f),
-        Layer("shrubs", R.drawable.layer_07_shrubs, 0.0f, 0.0f),
-        Layer("frame", R.drawable.layer_08_frame, 0.0f, 0.0f),
+        Layer("stars", R.drawable.layer_02_stars, 0.0f, 0.0f),
+        Layer("far-haze", R.drawable.layer_03_far_haze, 1.0f, 0.0f),
+        Layer("mid-forest", R.drawable.layer_04_mid_forest, 2.0f, 0.0f),
+        Layer("ground", R.drawable.layer_05_ground, 3.0f, 0.0f),
+        Layer("cabin", R.drawable.layer_06_cabin, 3.0f, 0.0f),
+        Layer("near-forest", R.drawable.layer_07_near_forest, 5.0f, 0.0f),
+        Layer("foreground", R.drawable.layer_08_foreground, 8.0f, 0.0f),
+        Layer("canopy", R.drawable.layer_09_canopy, 8.0f, 0.0f),
     )
 
     val isEmpty: Boolean get() = ALL.isEmpty()

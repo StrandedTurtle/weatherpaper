@@ -12,52 +12,59 @@
       "sway": 0
     },
     {
-      "source": "02-far-ridge.png",
-      "name": "far-ridge",
-      "resource": "layer_02_far_ridge",
+      "source": "02-stars.png",
+      "name": "stars",
+      "resource": "layer_02_stars",
       "parallax": 0,
       "sway": 0
     },
     {
-      "source": "03-mid-forest.png",
+      "source": "03-far-haze.png",
+      "name": "far-haze",
+      "resource": "layer_03_far_haze",
+      "parallax": 1,
+      "sway": 0
+    },
+    {
+      "source": "04-mid-forest.png",
       "name": "mid-forest",
-      "resource": "layer_03_mid_forest",
-      "parallax": 0,
+      "resource": "layer_04_mid_forest",
+      "parallax": 2,
       "sway": 0
     },
     {
-      "source": "04-ground.png",
+      "source": "05-ground.png",
       "name": "ground",
-      "resource": "layer_04_ground",
-      "parallax": 0,
+      "resource": "layer_05_ground",
+      "parallax": 3,
       "sway": 0
     },
     {
-      "source": "05-cabin.png",
+      "source": "06-cabin.png",
       "name": "cabin",
-      "resource": "layer_05_cabin",
-      "parallax": 0,
+      "resource": "layer_06_cabin",
+      "parallax": 3,
       "sway": 0
     },
     {
-      "source": "06-near-forest.png",
+      "source": "07-near-forest.png",
       "name": "near-forest",
-      "resource": "layer_06_near_forest",
-      "parallax": 0,
+      "resource": "layer_07_near_forest",
+      "parallax": 5,
       "sway": 0
     },
     {
-      "source": "07-shrubs.png",
-      "name": "shrubs",
-      "resource": "layer_07_shrubs",
-      "parallax": 0,
+      "source": "08-foreground.png",
+      "name": "foreground",
+      "resource": "layer_08_foreground",
+      "parallax": 8,
       "sway": 0
     },
     {
-      "source": "08-frame.png",
-      "name": "frame",
-      "resource": "layer_08_frame",
-      "parallax": 0,
+      "source": "09-canopy.png",
+      "name": "canopy",
+      "resource": "layer_09_canopy",
+      "parallax": 8,
       "sway": 0
     }
   ]

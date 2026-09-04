@@ -26,7 +26,16 @@ fs.mkdirSync(SP,{recursive:true});
 const W=160,H=288;
 const K=+(process.argv[2]||40);
 
-const img=decodePNG(fs.readFileSync(path.join(ROOT,'forest-cabin-reference.png')));
+const REF=path.join(ROOT,'forest-cabin-reference.png');
+if(!fs.existsSync(REF)){
+  console.error('Missing '+REF+'\n\n'+
+    'The scene is derived from that reference painting, which is deliberately NOT\n'+
+    'committed: it is a signed piece by someone else, and this repo and its APK are\n'+
+    'public. The generated art in art/layers/ is committed, so the app builds without\n'+
+    'it - you only need it to regenerate the scene from scratch.');
+  process.exit(1);
+}
+const img=decodePNG(fs.readFileSync(REF));
 const D=img.rgba;
 // 1200x2400 -> keep the top (the moon lives there) and drop 240 rows off the
 // bottom, which also removes the artist's signature.
