@@ -33,9 +33,9 @@
       "sway": 0
     },
     {
-      "source": "05-river.png",
-      "name": "river",
-      "resource": "layer_05_river",
+      "source": "05-cabin.png",
+      "name": "cabin",
+      "resource": "layer_05_cabin",
       "parallax": 0,
       "sway": 0
     },

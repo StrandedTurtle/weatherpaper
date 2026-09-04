@@ -32,7 +32,7 @@ internal object Layers {
         Layer("far-ridge", R.drawable.layer_02_far_ridge, 0.0f, 0.0f),
         Layer("mid-forest", R.drawable.layer_03_mid_forest, 0.0f, 0.0f),
         Layer("ground", R.drawable.layer_04_ground, 0.0f, 0.0f),
-        Layer("river", R.drawable.layer_05_river, 0.0f, 0.0f),
+        Layer("cabin", R.drawable.layer_05_cabin, 0.0f, 0.0f),
         Layer("near-forest", R.drawable.layer_06_near_forest, 0.0f, 0.0f),
         Layer("shrubs", R.drawable.layer_07_shrubs, 0.0f, 0.0f),
         Layer("frame", R.drawable.layer_08_frame, 0.0f, 0.0f),
