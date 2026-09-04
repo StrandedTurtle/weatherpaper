@@ -2,8 +2,8 @@
 
 A pixel-art live wallpaper for Android, built to be tiny and to cost almost nothing to run.
 
-The artwork is hand-drawn and imported as layered PNGs. **The scene has not been drawn yet** —
-the app currently ships a placeholder and waits for art. See [ART.md](ART.md).
+The artwork is hand-drawn and imported as layered PNGs. The scene is a 160×288 night forest
+clearing with a cabin, drawn across eight depth layers. See [ART.md](ART.md).
 
 ---
 
