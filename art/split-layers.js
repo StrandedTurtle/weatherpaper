@@ -1,12 +1,16 @@
 // Cut the reduced reference into the eight depth layers.
 //
+// Runs after art/reduce-reference.js. Both are the source of truth; the sprite
+// is generated output.
+//
 // Colour alone cannot segment this image - every palette class spans the full
 // height - so the split is: a flood-filled sky, a grass-derived horizon, and
 // hand-authored boxes for the cabin and the fence. It is an approximation of
 // depth, chosen so the stack is useful for parallax later. The flatten is exact
 // either way: every pixel is assigned to exactly one layer.
 const fs = require('fs');
-const SP = process.env.SP;
+const path = require('path');
+const SP = process.env.SP || path.join(__dirname, '.build');
 const d = JSON.parse(fs.readFileSync(SP + '/reduced.json', 'utf8'));
 const W = d.width, H = d.height, PAL = d.palette, IDX = d.index;
 

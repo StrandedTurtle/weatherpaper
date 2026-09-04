@@ -10,3 +10,6 @@ out/
 
 # Generated composite previews
 art/preview/
+
+# Intermediates from art/rebuild.sh
+art/.build/

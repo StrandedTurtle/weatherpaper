@@ -1,15 +1,17 @@
 // Reduce forest-cabin-reference.png to the 160x288 canvas.
 //
+// THIS IS THE SOURCE OF TRUTH FOR THE ARTWORK. art/scene.aseprite is generated
+// output - regenerate it freely with art/rebuild.sh. If you start editing the
+// sprite by hand instead, say so, because then this relationship inverts.
+//
 // Crops the reference to the canvas aspect, area-downsamples in LINEAR light
 // (averaging in sRGB washes out a picture this dark), then quantises to a
 // k-means palette. Averaging first and quantising second is deliberate: the
 // other order throws away the sub-pixel detail that makes the reduction read.
 //
-// Run:  SP=<scratch dir> node art/reduce-reference.js [paletteSize]
-// Then: SP=<scratch dir> node art/split-layers.js
+//   node art/reduce-reference.js [paletteSize]     default 40
 //
-// art/scene.aseprite is the master. Re-running these rebuilds it from the
-// reference and destroys anything drawn by hand in Aseprite since.
+// Intermediates land in art/.build (override with SP=<dir>).
 
 // Crop the reference to the canvas aspect, area-downsample to 160x288, then
 // quantise to a k-means palette. Area averaging first, quantise second - the
@@ -19,6 +21,8 @@ const ROOT=path.join(__dirname,'..');
 const {decodePNG}=require(path.join(ROOT,'tools/png-decode.js'));
 const {encodePNGA}=require(path.join(ROOT,'tools/png.js'));
 const fs=require('fs');
+const SP=process.env.SP||path.join(ROOT,'art/.build');
+fs.mkdirSync(SP,{recursive:true});
 const W=160,H=288;
 const K=+(process.argv[2]||40);
 
@@ -69,15 +73,15 @@ for(let i=0;i<W*H;i++){
 const hex=c=>'#'+c.map(v=>v.toString(16).padStart(2,'0')).join('');
 const out=Buffer.alloc(W*H*4);
 for(let i=0;i<W*H;i++){const c=cent[idx[i]];out[i*4]=c[0];out[i*4+1]=c[1];out[i*4+2]=c[2];out[i*4+3]=255;}
-fs.writeFileSync(process.env.SP+'/reduced.png',encodePNGA(out,W,H));
-fs.writeFileSync(process.env.SP+'/reduced.json',JSON.stringify({
+fs.writeFileSync(SP+'/reduced.png',encodePNGA(out,W,H));
+fs.writeFileSync(SP+'/reduced.json',JSON.stringify({
   width:W,height:H,palette:cent.map(hex),index:Array.from(idx)}));
 // magnified copy for looking at
 const S=2,ow=W*S,oh=H*S,big=Buffer.alloc(ow*oh*4);
 for(let y=0;y<oh;y++)for(let x=0;x<ow;x++){
   const s=((y/S|0)*W+(x/S|0))*4,d=(y*ow+x)*4;
   big[d]=out[s];big[d+1]=out[s+1];big[d+2]=out[s+2];big[d+3]=255;}
-fs.writeFileSync(process.env.SP+'/reduced-big.png',encodePNGA(big,ow,oh));
+fs.writeFileSync(SP+'/reduced-big.png',encodePNGA(big,ow,oh));
 console.log('K='+K+'  palette:');
 cent.map((c,i)=>({c,i})).sort((a,b)=>lum(a.c)-lum(b.c)).forEach(o=>process.stdout.write(hex(o.c)+' '));
 console.log();

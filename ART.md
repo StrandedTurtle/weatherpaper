@@ -22,6 +22,46 @@ number so the pixels stay square, and crops to the screen.**
 
 ---
 
+## How the current scene is made
+
+The scene in the repo is not hand-drawn. It is reduced from
+`forest-cabin-reference.png` by script, and `art/scene.aseprite` is **generated
+output** — regenerate it freely:
+
+```sh
+art/rebuild.sh            # reference -> reduction -> layers -> sprite -> app resources
+art/rebuild.sh 48         # same, with a 48-colour palette instead of 40
+```
+
+Three steps, each runnable on its own:
+
+| script | does |
+|---|---|
+| `art/reduce-reference.js` | crop to the canvas aspect, area-downsample in **linear light**, quantise to a k-means palette |
+| `art/split-layers.js` | cut the reduction into the eight depth layers |
+| `art/build-aseprite.js` | write `art/scene.aseprite` through the aseprite MCP server |
+
+Two things about that reduction are load-bearing. It averages in **linear
+light** — averaging a picture this dark in sRGB washes it out. And it
+**downsamples before quantising**; the other order throws away the sub-pixel
+detail that makes the reduction read at 160×288.
+
+The depth split is an approximation. Colour cannot segment this image — every
+palette class spans nearly the full height — so it uses a flood-filled sky, a
+horizon derived from where lit grass starts per column, and hand-authored boxes
+for the cabin and fence. That is fine because **compositing the layers
+reproduces the reduction exactly**, checked on every build. The cut can be
+recut without changing how the scene looks. `01-sky` and `04-ground` are
+backfilled underneath the layers above them, so a parallax shift cannot punch a
+hole through to nothing.
+
+`ASEPRITE=` overrides the editor binary — Steam builds are not on `PATH`.
+
+If you start editing the sprite by hand, say so: the scripts overwrite it, and
+that relationship needs to invert.
+
+---
+
 ## The loop
 
 ```sh
