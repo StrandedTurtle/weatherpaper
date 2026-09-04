@@ -13,8 +13,9 @@ const path = require('path');
 const ROOT = path.join(__dirname, '..');
 const SP = process.env.SP || path.join(ROOT, 'art/.build');
 const MCP = process.env.PIXEL_MCP || path.join(process.env.HOME, '.local/bin/pixel-mcp');
-const SPRITE = path.join(ROOT, 'art/scene.aseprite');
-const LAYERS = ['01-sky','02-far-ridge','03-mid-forest','04-ground','05-cabin','06-near-forest','07-shrubs','08-frame'];
+const SPRITE = process.env.SPRITE || path.join(ROOT, 'art/scene.aseprite');
+// Layer names and their order come from the data, so this builds any split.
+const LAYERS = Object.keys(JSON.parse(fs.readFileSync(SP + '/layers.json','utf8'))).sort();
 const PALETTE = JSON.parse(fs.readFileSync(SP + '/palette.json', 'utf8'));
 const data = JSON.parse(fs.readFileSync(SP + '/layers.json', 'utf8'));
 
