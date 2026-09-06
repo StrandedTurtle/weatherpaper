@@ -19,16 +19,84 @@ and cut into nine depth planes. See [ART.md](ART.md).
 but how a drawing should respond to time of day, season and weather depends on how it is drawn —
 so that is deliberately left open until the art exists.
 
-## Installing
+## Installing on your phone
 
-There is no Play Store build. CI produces an installable APK on every push:
+There is no Play Store build. Every push to `main` produces a signed, R8-shrunk
+APK in CI, and that is the one to sideload.
 
-1. Open [**Actions**](../../actions) and pick the most recent green run.
-2. Download the `weatherpaper-apks-…` artifact and unzip it.
-3. Sideload `app-release.apk` — already signed and R8-shrunk.
-4. **Settings › Wallpaper › Live wallpapers › WeatherPaper**.
+**1. Get the APK**
 
-The artifact name carries the release APK's size.
+1. Open [**Actions**](../../actions) and click the most recent run with a green tick.
+2. Scroll to **Artifacts** at the bottom and download `weatherpaper-apks-…`.
+   The artifact name carries the release APK's size, so you can sanity-check it
+   before downloading.
+3. Unzip it. You want **`app-release.apk`** — already signed, so it installs as-is.
+   (`app-debug.apk` is also in there; ignore it unless you are debugging.)
+
+GitHub only lets signed-in users download artifacts, and they expire after 90
+days. Re-run the workflow if you come back to a stale one.
+
+**2. Put it on the phone**
+
+Any of these work — pick whichever you already have:
+
+- **USB:** `adb install -r app-release.apk`
+- **No cable:** upload to Drive/Dropbox, or email it to yourself, and open it on
+  the phone.
+
+Android will ask you to allow installs from whatever app you opened it with
+(Files, Chrome, Drive). That prompt is expected for any sideloaded APK; grant it
+for that app only. Play Protect may also warn that it does not recognise the
+developer — that is what an unknown signing key looks like, and **Install anyway**
+is the way past it.
+
+**3. Set it as your wallpaper**
+
+**Settings › Wallpaper › Live wallpapers › WeatherPaper**, then **Set wallpaper**.
+
+Some launchers instead want a long-press on the home screen → **Wallpapers** →
+**Live wallpapers**. Samsung hides it under **Settings › Wallpaper and style ›
+Change wallpaper › Live wallpaper**.
+
+**4. Configure it**
+
+The settings screen opens from the **Settings** button in the wallpaper picker,
+or from the **WeatherPaper** icon in your app drawer. From there you can:
+
+- give it location permission, or type a place name if you would rather not
+- turn the clock, temperature, condition and place name on or off
+- drag the readout to where you want it, live over the artwork
+- switch between 12- and 24-hour time
+
+Location is optional. Without the permission nothing leaves the device but a
+latitude and longitude sent to Open-Meteo for the place you named.
+
+---
+
+## Previewing on the desktop
+
+```sh
+node tools/make-preview.js        # -> art/preview/preview.html
+```
+
+One self-contained file — the nine layers, the scene metadata and the readout
+font are all inlined, so it opens straight off disk with no server. It renders
+the scene exactly as `SceneRenderer.kt` does: same whole-number scale, same
+bottom-anchored crop, same per-layer parallax offset. Verified against
+`tools/preview-layers.js` at zero differing pixels.
+
+It gives you a phone-accurate crop across six screen shapes, a swipe slider (and
+an auto-swipe) to see the parallax move, per-plane visibility and solo, guide
+overlays for the horizon, moon, cabin openings and safe area, and a draggable
+readout so you can pick its position before touching the phone.
+
+`art/rebuild.sh` regenerates it along with everything else.
+
+There is also a quick static render, if you just want a PNG:
+
+```sh
+node tools/preview-layers.js 1080 2400
+```
 
 ---
 

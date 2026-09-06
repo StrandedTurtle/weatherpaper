@@ -34,4 +34,5 @@ node tools/import-layers.js
 node art/apply-parallax.js          # parallax per plane, from scene-meta.json
 node tools/gen-kotlin.js
 node tools/gen-thumb.js
+node tools/make-preview.js        # desktop inspector, art/preview/preview.html
 echo "==> done"

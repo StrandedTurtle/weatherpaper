@@ -29,10 +29,12 @@ const K=+(process.argv[2]||40);
 const REF=path.join(ROOT,'forest-cabin-reference.png');
 if(!fs.existsSync(REF)){
   console.error('Missing '+REF+'\n\n'+
-    'The scene is derived from that reference painting, which is deliberately NOT\n'+
-    'committed: it is a signed piece by someone else, and this repo and its APK are\n'+
-    'public. The generated art in art/layers/ is committed, so the app builds without\n'+
-    'it - you only need it to regenerate the scene from scratch.');
+    'The scene is derived from that reference painting, which is deliberately not in\n'+
+    'the repo: it is a signed piece by someone else, and this repo and its APK are\n'+
+    'public.\n\n'+
+    'The generated art in art/layers/ IS committed, so the app builds and the desktop\n'+
+    'preview works without it. You only need the reference to regenerate the scene\n'+
+    'from scratch - drop it back at the path above and re-run.');
   process.exit(1);
 }
 const img=decodePNG(fs.readFileSync(REF));

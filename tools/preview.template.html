@@ -1,0 +1,405 @@
+<meta charset="utf-8">
+<title>WeatherPaper Scene Inspector</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Chivo:wght@400;600;700&family=JetBrains+Mono:wght@400;600&family=Silkscreen&display=swap">
+<style>
+  /* Single theme on purpose: this is a viewer for a night scene, and a light
+     ground would fight every value judgement it exists to support. Every colour
+     below is taken from the artwork's own 40-colour palette. */
+  :root{
+    --ground:#0b0f10; --surface:#141a1b; --surface-2:#1b2422;
+    --line:#243430; --line-soft:#192320;
+    --ink:#c9d2ce; --muted:#7e8c8a; --dim:#4c5a57;
+    --accent:#709a54; --accent-dim:#41642f; --moon:#bcbdbd; --warn:#c98f4e;
+    --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+    --ui:"Chivo",system-ui,-apple-system,Segoe UI,sans-serif;
+    --pixel:"Silkscreen","Chivo",system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--ground);color:var(--ink);font-family:var(--ui);
+       font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  h1{font-size:20px;font-weight:700;margin:0;letter-spacing:-.01em}
+  .eyebrow{font-family:var(--pixel);font-size:9px;letter-spacing:.14em;
+           text-transform:uppercase;color:var(--muted)}
+  .wrap{display:grid;grid-template-columns:minmax(0,1fr) 344px;gap:22px;
+        max-width:1180px;margin:0 auto;padding:22px}
+  @media (max-width:920px){.wrap{grid-template-columns:minmax(0,1fr)}}
+
+  header{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;
+         border-bottom:1px solid var(--line);padding-bottom:12px;margin-bottom:4px}
+  header .sub{color:var(--muted);font-size:13px}
+
+  .stage{background:var(--surface);border:1px solid var(--line);padding:18px;
+         display:flex;flex-direction:column;align-items:center;gap:14px;min-width:0}
+  .screen{position:relative;background:#000;border:1px solid var(--line);
+          box-shadow:0 18px 50px rgba(0,0,0,.55)}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges}
+  #view{cursor:grab} #view.dragging{cursor:grabbing}
+
+  .facts{width:100%;display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));
+         gap:1px;background:var(--line-soft);border:1px solid var(--line-soft)}
+  .fact{background:var(--surface-2);padding:8px 10px}
+  .fact b{display:block;font-family:var(--mono);font-size:14px;font-weight:600;
+          color:var(--ink);font-variant-numeric:tabular-nums}
+  .fact span{display:block;font-family:var(--pixel);font-size:8px;letter-spacing:.12em;
+             text-transform:uppercase;color:var(--muted);margin-top:3px}
+
+  .rail{display:flex;flex-direction:column;gap:14px;min-width:0}
+  .panel{background:var(--surface);border:1px solid var(--line)}
+  .panel > .head{display:flex;justify-content:space-between;align-items:center;
+                 padding:9px 12px;border-bottom:1px solid var(--line)}
+  .panel > .body{padding:12px}
+
+  label.row{display:flex;align-items:center;gap:9px;padding:3px 0;cursor:pointer}
+  label.row input{accent-color:var(--accent);width:14px;height:14px;flex:none;cursor:pointer}
+  select,input[type=number]{background:var(--surface-2);color:var(--ink);
+    border:1px solid var(--line);padding:6px 8px;font-family:var(--mono);font-size:13px;width:100%}
+  input[type=range]{width:100%;accent-color:var(--accent)}
+  button{background:var(--surface-2);color:var(--ink);border:1px solid var(--line);
+         padding:6px 10px;font-family:var(--ui);font-size:12px;cursor:pointer}
+  button:hover{border-color:var(--accent-dim)}
+  button[aria-pressed=true]{background:var(--accent-dim);border-color:var(--accent);color:#eef3ea}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{font-family:var(--pixel);font-size:8px;letter-spacing:.1em;text-transform:uppercase;
+     color:var(--muted);text-align:left;font-weight:400;padding:0 6px 6px 0}
+  td{padding:3px 6px 3px 0;border-top:1px solid var(--line-soft)}
+  td.num{font-family:var(--mono);font-variant-numeric:tabular-nums;color:var(--muted);text-align:right}
+  tr.off td{color:var(--dim)}
+  .swatch{display:inline-block;width:3px;height:12px;margin-right:7px;vertical-align:-2px;background:var(--accent)}
+  .note{color:var(--muted);font-size:12px;margin:0}
+  .note code{font-family:var(--mono);color:var(--ink);font-size:11px}
+  .btns{display:flex;gap:6px;flex-wrap:wrap}
+</style>
+
+<div class="wrap">
+  <div class="stage">
+    <header style="width:100%">
+      <h1>Scene Inspector</h1>
+      <span class="sub">WeatherPaper &middot; 160&times;288 &middot; 9 planes</span>
+    </header>
+    <div class="screen"><canvas id="view"></canvas></div>
+    <div class="facts" id="facts"></div>
+    <p class="note" style="width:100%">Drag on the artwork to move the readout. The crop, the
+      whole-number scale and the parallax offsets are computed exactly as
+      <code>SceneRenderer.kt</code> computes them.</p>
+  </div>
+
+  <div class="rail">
+    <div class="panel">
+      <div class="head"><span class="eyebrow">Screen</span></div>
+      <div class="body" style="display:flex;flex-direction:column;gap:10px">
+        <select id="preset"></select>
+        <div>
+          <div class="eyebrow" style="margin-bottom:5px">Home-screen swipe <span id="slideVal" style="font-family:var(--mono)"></span></div>
+          <input type="range" id="slide" min="-1" max="1" step="0.02" value="0">
+        </div>
+        <div class="btns">
+          <button id="autoSwipe" aria-pressed="false">Auto-swipe</button>
+          <button id="resetSlide">Centre</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="head"><span class="eyebrow">Depth planes</span>
+        <div class="btns"><button id="allOn">All</button><button id="soloOff">Reset</button></div></div>
+      <div class="body">
+        <table><thead><tr><th>Plane</th><th style="text-align:right">Depth</th>
+          <th style="text-align:right">Px</th><th></th></tr></thead>
+          <tbody id="planes"></tbody></table>
+        <p class="note" style="margin-top:9px">Click a name to solo it.</p>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="head"><span class="eyebrow">Guides</span></div>
+      <div class="body">
+        <label class="row"><input type="checkbox" id="gSafe">Safe area for this screen</label>
+        <label class="row"><input type="checkbox" id="gHorizon">Horizon line</label>
+        <label class="row"><input type="checkbox" id="gMoon">Moon</label>
+        <label class="row"><input type="checkbox" id="gCabin">Cabin &amp; openings</label>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="head"><span class="eyebrow">Readout</span></div>
+      <div class="body">
+        <label class="row"><input type="checkbox" id="oClock" checked>Clock</label>
+        <label class="row"><input type="checkbox" id="oTemp" checked>Temperature</label>
+        <label class="row"><input type="checkbox" id="oCond" checked>Condition</label>
+        <label class="row"><input type="checkbox" id="oPlace" checked>Place</label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:9px">
+          <div><div class="eyebrow" style="margin-bottom:4px">Size</div>
+            <input type="number" id="oSize" min="1" max="4" value="2"></div>
+          <div><div class="eyebrow" style="margin-bottom:4px">Position</div>
+            <div id="oPos" style="font-family:var(--mono);font-size:12px;padding-top:7px;color:var(--muted)"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+/*__DATA__*/
+
+var $ = function(id){ return document.getElementById(id); };
+var cv = $('view'), ctx = cv.getContext('2d');
+var W = SCENE.canvas.width, H = SCENE.canvas.height;
+
+var PRESETS = [
+  ['1080 x 2400  (20:9, commonest)', 1080, 2400],
+  ['1080 x 1920  (16:9)', 1080, 1920],
+  ['1440 x 3120  (Pixel Pro)', 1440, 3120],
+  ['1284 x 2778  (iPhone-ish)', 1284, 2778],
+  ['720 x 1600  (budget)', 720, 1600],
+  ['1080 x 2340  (19.5:9)', 1080, 2340]
+];
+PRESETS.forEach(function(p,i){
+  var o = document.createElement('option'); o.value = i; o.textContent = p[0]; $('preset').appendChild(o);
+});
+
+var state = {
+  preset: 0, slide: 0, auto: false, solo: null,
+  vis: SCENE.planes.map(function(){ return true; }),
+  overlay: { x: 0.5, y: 0.18, size: 2, clock: true, temp: true, cond: true, place: true }
+};
+
+var imgs = [], ready = 0;
+SCENE.planes.forEach(function(p, i){
+  var im = new Image();
+  im.onload = function(){ ready++; if (ready === SCENE.planes.length) { buildPlanes(); render(); } };
+  im.src = p.src;
+  imgs[i] = im;
+});
+
+function geometry(){
+  var p = PRESETS[state.preset], sw = p[1], sh = p[2];
+  var unit = Math.max(1, Math.ceil(Math.max(sw / W, sh / H)));
+  var w = W * unit, h = H * unit;
+  var left = Math.round((sw - w) / 2);
+  var top = SCENE.canvas.anchor === 'bottom' ? (sh - h) : Math.round((sh - h) / 2);
+  return { sw: sw, sh: sh, unit: unit, w: w, h: h, left: left, top: top };
+}
+
+// The 5x7 readout font, drawn the way Overlay.kt draws it: a 1px dark halo, then the ink.
+function glyphMask(text){
+  var A = FONT.w + FONT.tracking, cols = text.length * A, m = [];
+  for (var i = 0; i < cols * FONT.h; i++) m[i] = false;
+  for (var c = 0; c < text.length; c++){
+    var rows = (FONT.glyphs[text[c]] || FONT.glyphs['?'] || '').split('/');
+    for (var y = 0; y < FONT.h; y++){
+      var r = rows[y] || '';
+      for (var x = 0; x < FONT.w; x++) if (r[x] === '#') m[y * cols + c * A + x] = true;
+    }
+  }
+  return { m: m, cols: cols };
+}
+function drawText(text, left, top, unit){
+  var g = glyphMask(text), m = g.m, cols = g.cols;
+  ctx.fillStyle = 'rgba(6,10,8,.78)';
+  for (var y = 0; y < FONT.h; y++) for (var x = 0; x < cols; x++){
+    if (m[y * cols + x]) continue;
+    var near = false;
+    for (var dy = -1; dy <= 1 && !near; dy++) for (var dx = -1; dx <= 1; dx++){
+      var nx = x + dx, ny = y + dy;
+      if (nx >= 0 && nx < cols && ny >= 0 && ny < FONT.h && m[ny * cols + nx]) { near = true; break; }
+    }
+    if (near) ctx.fillRect(left + x * unit, top + y * unit, unit, unit);
+  }
+  ctx.fillStyle = '#ecf0ea';
+  for (var y2 = 0; y2 < FONT.h; y2++) for (var x2 = 0; x2 < cols; x2++)
+    if (m[y2 * cols + x2]) ctx.fillRect(left + x2 * unit, top + y2 * unit, unit, unit);
+}
+function textWidth(t, sc){ return t.length === 0 ? 0 : (t.length * (FONT.w + FONT.tracking) - FONT.tracking) * sc; }
+
+function readoutLines(){
+  var o = state.overlay, out = [];
+  if (o.clock) out.push({ t: SAMPLE.clock, bump: 1 });
+  var second = '';
+  if (o.temp) second += SAMPLE.temp;
+  if (o.cond) second += (second ? ' ' : '') + SAMPLE.condition;
+  if (second) out.push({ t: second, bump: 0 });
+  if (o.place) out.push({ t: SAMPLE.place, bump: 0 });
+  return out;
+}
+
+function render(){
+  var g = geometry();
+  cv.width = g.sw; cv.height = g.sh;
+  var scale = Math.min(1, 620 / g.sh);
+  cv.style.width = Math.round(g.sw * scale) + 'px';
+  cv.style.height = Math.round(g.sh * scale) + 'px';
+
+  ctx.imageSmoothingEnabled = false;
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, g.sw, g.sh);
+
+  SCENE.planes.forEach(function(p, i){
+    var on = state.solo === null ? state.vis[i] : state.solo === i;
+    if (!on || !imgs[i].complete) return;
+    var dx = Math.round(state.slide * p.parallax * g.unit);
+    ctx.drawImage(imgs[i], g.left + dx, g.top, g.w, g.h);
+  });
+
+  drawGuides(g);
+  drawReadout(g);
+  updateFacts(g);
+}
+
+function art(g, x, y){ return [g.left + x * g.unit, g.top + y * g.unit]; }
+
+function drawGuides(g){
+  ctx.save();
+  ctx.lineWidth = Math.max(1, g.unit / 3);
+  if ($('gSafe').checked){
+    var x0 = Math.max(0, -g.left), y0 = Math.max(0, -g.top);
+    var x1 = Math.min(W, (g.sw - g.left) / g.unit), y1 = Math.min(H, (g.sh - g.top) / g.unit);
+    var a = art(g, x0, y0), b = art(g, x1, y1);
+    ctx.strokeStyle = 'rgba(112,154,84,.9)';
+    ctx.setLineDash([g.unit * 2, g.unit * 2]);
+    ctx.strokeRect(a[0] + 0.5, a[1] + 0.5, b[0] - a[0], b[1] - a[1]);
+    ctx.setLineDash([]);
+  }
+  if ($('gHorizon').checked && SCENE.horizon){
+    ctx.strokeStyle = 'rgba(201,143,78,.95)';
+    ctx.beginPath();
+    SCENE.horizon.forEach(function(y, x){
+      if (y === null) return;
+      var pt = art(g, x, y);
+      if (x === 0) ctx.moveTo(pt[0], pt[1]); else ctx.lineTo(pt[0], pt[1]);
+    });
+    ctx.stroke();
+  }
+  if ($('gMoon').checked && SCENE.moon){
+    var m = art(g, SCENE.moon.x + 0.5, SCENE.moon.y + 0.5);
+    ctx.strokeStyle = 'rgba(188,189,189,.95)';
+    ctx.beginPath(); ctx.arc(m[0], m[1], (SCENE.moon.r + 3) * g.unit, 0, Math.PI * 2); ctx.stroke();
+  }
+  if ($('gCabin').checked && SCENE.cabin){
+    var bb = SCENE.cabin.bbox, p0 = art(g, bb.x, bb.y);
+    ctx.strokeStyle = 'rgba(201,143,78,.8)';
+    ctx.strokeRect(p0[0], p0[1], bb.w * g.unit, bb.h * g.unit);
+    ctx.strokeStyle = 'rgba(255,214,120,1)';
+    SCENE.cabin.openings.forEach(function(o){
+      var q = art(g, o.x, o.y);
+      ctx.strokeRect(q[0], q[1], o.w * g.unit, o.h * g.unit);
+    });
+  }
+  ctx.restore();
+}
+
+function drawReadout(g){
+  var ls = readoutLines();
+  if (!ls.length) return;
+  var o = state.overlay, size = Math.min(4, Math.max(1, o.size)), gap = 3 * size * g.unit;
+  var total = 0;
+  ls.forEach(function(l){ total += FONT.h * (size + l.bump) * g.unit + gap; });
+  total -= gap;
+  var y = g.top + o.y * g.h - total / 2;
+  ls.forEach(function(l){
+    var sc = size + l.bump, w = textWidth(l.t, sc) * g.unit;
+    drawText(l.t, g.left + o.x * g.w - w / 2, y, sc * g.unit);
+    y += FONT.h * sc * g.unit + gap;
+  });
+  $('oPos').textContent = 'x ' + o.x.toFixed(2) + '  y ' + o.y.toFixed(2);
+}
+
+function updateFacts(g){
+  var visX = Math.min(W, Math.ceil(g.sw / g.unit)), visY = Math.min(H, Math.ceil(g.sh / g.unit));
+  var cropX = Math.max(0, Math.round((W - visX) / 2)), cropY = Math.max(0, H - visY);
+  var f = [
+    [g.unit + '×', 'screen px / art px'],
+    [visX + ' × ' + visY, 'artwork visible'],
+    [cropX + ' cols', 'cropped each side'],
+    [cropY + ' rows', 'cropped from top'],
+    [SCENE.canvas.paletteSize, 'palette colours']
+  ];
+  $('facts').innerHTML = f.map(function(x){
+    return '<div class="fact"><b>' + x[0] + '</b><span>' + x[1] + '</span></div>';
+  }).join('');
+}
+
+function buildPlanes(){
+  var tb = $('planes'); tb.innerHTML = '';
+  SCENE.planes.forEach(function(p, i){
+    var tr = document.createElement('tr');
+    var on = state.solo === null ? state.vis[i] : state.solo === i;
+    if (!on) tr.className = 'off';
+    var shade = 'rgba(112,154,84,' + (0.25 + 0.75 * p.depth).toFixed(2) + ')';
+    tr.innerHTML =
+      '<td><span class="swatch" style="background:' + shade + '"></span>' +
+      '<button style="all:unset;cursor:pointer" data-solo="' + i + '" title="' +
+      String(p.note).replace(/"/g, '&quot;') + '">' + p.name.replace(/^\d+-/, '') + '</button></td>' +
+      '<td class="num">' + p.depth.toFixed(2) + '</td>' +
+      '<td class="num">' + p.parallax + '</td>' +
+      '<td style="text-align:right"><input type="checkbox" data-vis="' + i + '"' +
+      (state.vis[i] ? ' checked' : '') + '></td>';
+    tb.appendChild(tr);
+  });
+  tb.querySelectorAll('[data-vis]').forEach(function(el){
+    el.addEventListener('change', function(){
+      state.vis[+el.dataset.vis] = el.checked; state.solo = null; buildPlanes(); render();
+    });
+  });
+  tb.querySelectorAll('[data-solo]').forEach(function(el){
+    el.addEventListener('click', function(){
+      var i = +el.dataset.solo;
+      state.solo = state.solo === i ? null : i;
+      buildPlanes(); render();
+    });
+  });
+}
+
+$('preset').addEventListener('change', function(){ state.preset = +this.value; render(); });
+$('slide').addEventListener('input', function(){
+  state.slide = +this.value; $('slideVal').textContent = state.slide.toFixed(2); render();
+});
+$('resetSlide').addEventListener('click', function(){
+  state.slide = 0; $('slide').value = 0; $('slideVal').textContent = '0.00'; render();
+});
+$('allOn').addEventListener('click', function(){
+  state.vis = state.vis.map(function(){ return true; }); state.solo = null; buildPlanes(); render();
+});
+$('soloOff').addEventListener('click', function(){ state.solo = null; buildPlanes(); render(); });
+
+var autoTimer = null;
+$('autoSwipe').addEventListener('click', function(){
+  state.auto = !state.auto;
+  this.setAttribute('aria-pressed', String(state.auto));
+  if (autoTimer) { clearInterval(autoTimer); autoTimer = null; }
+  if (state.auto && !matchMedia('(prefers-reduced-motion: reduce)').matches){
+    var t = 0;
+    autoTimer = setInterval(function(){
+      t += 0.04;
+      state.slide = Math.sin(t);
+      $('slide').value = state.slide; $('slideVal').textContent = state.slide.toFixed(2);
+      render();
+    }, 40);
+  }
+});
+
+['gSafe','gHorizon','gMoon','gCabin'].forEach(function(id){
+  $(id).addEventListener('change', render);
+});
+[['oClock','clock'],['oTemp','temp'],['oCond','cond'],['oPlace','place']].forEach(function(p){
+  $(p[0]).addEventListener('change', function(){ state.overlay[p[1]] = this.checked; render(); });
+});
+$('oSize').addEventListener('input', function(){ state.overlay.size = +this.value || 2; render(); });
+
+var dragging = false;
+function moveReadout(ev){
+  var g = geometry(), r = cv.getBoundingClientRect();
+  var x = (ev.clientX - r.left) / r.width * g.sw, y = (ev.clientY - r.top) / r.height * g.sh;
+  state.overlay.x = Math.min(1, Math.max(0, (x - g.left) / g.w));
+  state.overlay.y = Math.min(1, Math.max(0, (y - g.top) / g.h));
+  render();
+}
+cv.addEventListener('pointerdown', function(ev){
+  dragging = true; cv.classList.add('dragging'); cv.setPointerCapture(ev.pointerId); moveReadout(ev);
+});
+cv.addEventListener('pointermove', function(ev){ if (dragging) moveReadout(ev); });
+cv.addEventListener('pointerup', function(){ dragging = false; cv.classList.remove('dragging'); });
+
+$('slideVal').textContent = '0.00';
+</script>
