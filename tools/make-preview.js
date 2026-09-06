@@ -29,11 +29,17 @@ const planes = files.map(f => {
   const name = f.replace(/\.png$/, '');
   const plane = byName.get(name);
   if (!plane) throw new Error('art/scene-meta.json has no plane for ' + f);
+  // Every motion field has to come through: a missing one reads as undefined in
+  // the page's arithmetic and puts the whole plane at NaN, which draws nothing.
+  for (const k of ['depth', 'parallax', 'sway', 'wind']) {
+    if (typeof plane[k] !== 'number') throw new Error(name + ' has no numeric ' + k + ' in scene-meta.json');
+  }
   return {
     name,
     depth: plane.depth,
     parallax: plane.parallax,
     sway: plane.sway,
+    wind: plane.wind,
     note: plane.note,
     src: 'data:image/png;base64,' + fs.readFileSync(path.join(layerDir, f)).toString('base64'),
   };

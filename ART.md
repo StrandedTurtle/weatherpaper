@@ -58,22 +58,24 @@ Back to front. The split is by **scene**, not by threshold, because fog composit
 *between* depths, precipitation falls in front of some planes and behind others,
 and lighting needs the moon separable from the sky it sits in.
 
-| plane | depth | parallax | for |
+| plane | depth | wind | for |
 |---|---|---|---|
-| `01-sky` | 0.00 | 0 | full-canvas backdrop; recolour for time of day |
-| `02-stars` | 0.00 | 0 | fade at dawn; holds the moon |
-| `03-far-haze` | 0.15 | 1 | the first plane fog should thicken |
-| `04-mid-forest` | 0.30 | 2 | treeline against the sky |
-| `05-ground` | 0.45 | 3 | snow accumulates, rain darkens |
-| `06-cabin` | 0.50 | 3 | stands on the ground, so it shares its parallax |
-| `07-near-forest` | 0.70 | 5 | the flanking trunks |
-| `08-foreground` | 0.90 | 8 | nearest growth; rain falls in front of this |
-| `09-canopy` | 1.00 | 8 | overhead leaves; drips in rain |
+| `01-sky` | 0.00 | 0 | full-canvas backdrop; recoloured for time of day |
+| `02-stars` | 0.00 | 0 | fades with cloud, fog and daylight; holds the moon |
+| `03-far-haze` | 0.15 | 0.15 | the first plane fog thickens |
+| `04-mid-forest` | 0.30 | 0.30 | treeline against the sky |
+| `05-ground` | 0.45 | 0 | the floor does not sway |
+| `06-cabin` | 0.50 | 0 | a building does not sway; carries the lit window |
+| `07-near-forest` | 0.70 | 0.60 | flanking trunks and their foliage |
+| `08-foreground` | 0.90 | 0.90 | undergrowth; whips about in a gale |
+| `09-canopy` | 1.00 | 1.00 | overhead leaves; moves most |
 
-`parallax` is in artwork pixels across a full home-screen swipe. It is live —
-`sway` is deliberately left at **0**, because any non-zero sway puts the wallpaper
-into a permanent ~12fps loop. Turn it on per plane when a weather state earns it,
-not by default.
+`parallax` is **0 on every plane** — the scene is deliberately static. `sway` is
+unconditional drift and is also 0. What moves the scene is `wind`, a per-plane
+*susceptibility* between 0 and 1: the sky, ground and cabin do not move at all,
+the canopy moves most. `SceneMotion` multiplies that by the live wind speed each
+frame, so one number covers dead calm through a gale and a still day costs
+nothing.
 
 Two invariants worth not breaking:
 

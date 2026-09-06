@@ -15,9 +15,10 @@ and cut into nine depth planes. See [ART.md](ART.md).
   clock, temperature, condition, place name — on the **home screen only**, positioned by dragging.
 - Optional per-layer parallax on home-screen swipe and idle drift, off by default.
 
-**Weather does not drive the artwork yet.** The data is fetched and the scene state is computed,
-but how a drawing should respond to time of day, season and weather depends on how it is drawn —
-so that is deliberately left open until the art exists.
+**Weather drives the artwork.** Fog eats the distance plane by plane, cloud and daylight fade the
+stars, rain and snow fall, lightning flashes in a storm, wind moves the foliage and not the ground,
+and the cabin window lights up when it is dark and filthy out. All of it is a colour transform over
+the same nine PNGs — there is no second set of art for weather or for time of day.
 
 ## Installing on your phone
 
@@ -85,10 +86,16 @@ the scene exactly as `SceneRenderer.kt` does: same whole-number scale, same
 bottom-anchored crop, same per-layer parallax offset. Verified against
 `tools/preview-layers.js` at zero differing pixels.
 
-It gives you a phone-accurate crop across six screen shapes, a swipe slider (and
-an auto-swipe) to see the parallax move, per-plane visibility and solo, guide
-overlays for the horizon, moon, cabin openings and safe area, and a draggable
-readout so you can pick its position before touching the phone.
+It carries a port of `SceneLighting`, `SceneMotion` and `SceneEffects`, so you can
+drive the whole weather range — eight presets plus hour, cloud, wind, moon phase,
+sky condition, precipitation and thunder — and watch the scene answer. **Animate**
+runs it at the same 12fps the wallpaper uses, and the panel tells you whether the
+wallpaper would be animating or sitting still in that weather.
+
+It also gives you a phone-accurate crop across six screen shapes, per-plane
+visibility and solo, guide overlays for the horizon, moon, cabin openings and safe
+area, and a draggable readout so you can pick its position before touching the
+phone.
 
 `art/rebuild.sh` regenerates it along with everything else.
 
@@ -114,8 +121,11 @@ passes 1 MB.
 ## Why it is cheap to run
 
 - Nothing runs while the wallpaper is hidden.
-- A still scene **stops redrawing entirely** — or wakes once a minute if the clock is showing.
-  Only layers with drift set run a loop, at ~12fps, and power-save forces static.
+- **Motion is a property of the weather, not of the artwork.** The scene runs a ~12fps loop only
+  while wind, precipitation or thunder is actually giving it something to do, and drops straight
+  back to still when that passes. Below about 16 km/h the movement is under a third of an artwork
+  pixel, so it stays still. On a calm clear day the wallpaper draws once and then **stops entirely**
+  — or wakes once a minute if the clock is showing. Power-save forces static regardless.
 - **No background work at all.** Weather is fetched only when the wallpaper becomes visible and
   the cached reading is over 30 minutes old. No jobs, no alarms, no wakeups. The last reading is
   persisted, so the first frame after a reboot is never blank.
