@@ -123,7 +123,7 @@ passes 1 MB.
 - Nothing runs while the wallpaper is hidden.
 - **Motion is a property of the weather, not of the artwork.** The scene runs a ~12fps loop only
   while wind, precipitation or thunder is actually giving it something to do, and drops straight
-  back to still when that passes. Below about 16 km/h the movement is under a third of an artwork
+  back to still when that passes. Below about 13 km/h the movement is under a third of an artwork
   pixel, so it stays still. On a calm clear day the wallpaper draws once and then **stops entirely**
   — or wakes once a minute if the clock is showing. Power-save forces static regardless.
 - **No background work at all.** Weather is fetched only when the wallpaper becomes visible and
