@@ -1,5 +1,5 @@
-// Copy each plane's parallax and sway from art/scene-meta.json into
-// art/layers.json, which is what tools/gen-kotlin.js reads.
+// Copy each plane's motion settings from art/scene-meta.json into art/layers.json,
+// which is what tools/gen-kotlin.js reads.
 //
 // import-layers.js preserves parallax and sway across re-imports, so hand edits
 // in layers.json survive a rebuild - but a NEW layer set starts at zero, and
@@ -16,9 +16,10 @@ let changed = 0;
 for (const layer of manifest.layers) {
   const plane = byName.get(layer.source.replace(/\.png$/, ''));
   if (!plane) { console.warn('  no plane metadata for ' + layer.source); continue; }
-  if (layer.parallax !== plane.parallax || layer.sway !== plane.sway) changed++;
+  if (layer.parallax !== plane.parallax || layer.sway !== plane.sway || layer.wind !== plane.wind) changed++;
   layer.parallax = plane.parallax;
   layer.sway = plane.sway;
+  layer.wind = plane.wind;
 }
 fs.writeFileSync(manifestPath, JSON.stringify(manifest, null, 2) + '\n');
-console.log('parallax applied to ' + manifest.layers.length + ' layer(s), ' + changed + ' changed');
+console.log('motion applied to ' + manifest.layers.length + ' layer(s), ' + changed + ' changed');

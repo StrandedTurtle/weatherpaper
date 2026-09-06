@@ -4,21 +4,24 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
-import kotlin.math.sin
 
 /**
  * Composites the scene: the imported layers, back to front, then the readout.
  *
  * It knows nothing about what the artwork depicts. The canvas size comes from the images
  * themselves, they are scaled by a whole number so pixels stay square, and the result is
- * cropped to the screen. Per-layer parallax and drift are read from the manifest and are zero
- * until they are deliberately set.
+ * cropped to the screen.
+ *
+ * What the weather does to it lives in [SceneLighting] (colour), [SceneMotion] (wind) and
+ * [SceneEffects] (precipitation, lightning, the cabin lamp) - all pure functions of the state, so
+ * the settings preview and the wallpaper cannot show different scenes.
  */
 internal class SceneRenderer(private val context: Context) {
 
@@ -88,13 +91,36 @@ internal class SceneRenderer(private val context: Context) {
         loaded = false
     }
 
-    /** Horizontal offset for a layer, in screen pixels: home-screen parallax plus idle drift. */
-    private fun offsetFor(layer: Layers.Layer, index: Int, timeMs: Long, slide: Float): Int {
-        var px = slide * layer.parallax
-        if (layer.sway != 0f) {
-            px += sin(timeMs / 1000f * (0.3f + index * 0.07f) + index * 1.7f) * layer.sway
-        }
+    /** Horizontal offset for a layer, in screen pixels: parallax plus whatever the wind is doing. */
+    private fun offsetFor(layer: Layers.Layer, index: Int, timeMs: Long, slide: Float, st: SceneState): Int {
+        val px = slide * layer.parallax + SceneMotion.offsetFor(layer, index, timeMs, st)
         return (px * unit).roundToInt()
+    }
+
+    /**
+     * Per-plane colour filters, rebuilt only when the light actually changes.
+     *
+     * The scene sits on one state for minutes at a time, so the filters are cached against a
+     * coarse signature of it: without that, an animating frame would allocate nine
+     * ColorMatrixColorFilters twelve times a second to say the same thing each time.
+     */
+    private var filters: Array<ColorMatrixColorFilter?> = emptyArray()
+    private var filterKey = Int.MIN_VALUE
+
+    private fun lightingKey(st: SceneState): Int {
+        var k = (SceneLighting.daylight(st) * 64f).toInt()
+        k = k * 67 + (SceneLighting.haze(st) * 64f).toInt()
+        k = k * 67 + (st.cloud * 32f).toInt()
+        k = k * 67 + (SceneLighting.moonIllumination(st) * 16f).toInt()
+        k = k * 67 + (SceneLighting.twilight(st) * 32f).toInt()
+        return k
+    }
+
+    private fun ensureFilters(st: SceneState) {
+        val key = lightingKey(st)
+        if (key == filterKey && filters.size == Layers.ALL.size) return
+        filterKey = key
+        filters = Array(Layers.ALL.size) { SceneLighting.filterFor(st, Layers.ALL[it].depth) }
     }
 
     /**
@@ -121,18 +147,35 @@ internal class SceneRenderer(private val context: Context) {
             fill.color = BACKDROP
             canvas.drawRect(0f, 0f, screenW.toFloat(), screenH.toFloat(), fill)
 
+            ensureFilters(state)
+            val glow = SceneLighting.windowGlow(state)
+
             for (i in Layers.ALL.indices) {
+                val layer = Layers.ALL[i]
                 val bmp = bitmaps.getOrNull(i) ?: continue
                 if (bmp.isRecycled) continue
-                val dx = offsetFor(Layers.ALL[i], i, timeMs, slide)
+                val dx = offsetFor(layer, i, timeMs, slide, state)
                 dst.set(
                     (bounds.left.roundToInt() + dx),
                     bounds.top.roundToInt(),
                     (bounds.right.roundToInt() + dx),
                     bounds.bottom.roundToInt(),
                 )
-                canvas.drawBitmap(bmp, src, dst, blit)
+                val alpha = SceneLighting.alphaFor(layer.name, state)
+                if (alpha > 0) {
+                    blit.colorFilter = filters.getOrNull(i)
+                    blit.alpha = alpha
+                    canvas.drawBitmap(bmp, src, dst, blit)
+                    blit.colorFilter = null
+                    blit.alpha = 255
+                }
+                // Light the window as soon as the cabin is down, so the near foliage and any
+                // weather still pass in front of it.
+                if (layer.name == "cabin") SceneEffects.drawWindowGlow(canvas, glow, bounds, unit.toFloat())
             }
+
+            SceneEffects.drawPrecipitation(canvas, state, timeMs, bounds, unit.toFloat())
+            SceneEffects.drawLightning(canvas, SceneEffects.lightning(state, timeMs), screenW, screenH)
         }
 
         // Home screen only. On the lock screen this pass is simply skipped.

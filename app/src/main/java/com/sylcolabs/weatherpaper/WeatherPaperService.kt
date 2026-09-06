@@ -13,7 +13,7 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
-import com.sylcolabs.weatherpaper.scene.Layers
+import com.sylcolabs.weatherpaper.scene.SceneMotion
 import com.sylcolabs.weatherpaper.scene.SceneRenderer
 import com.sylcolabs.weatherpaper.weather.WeatherRepository
 
@@ -42,6 +42,9 @@ class WeatherPaperService : WallpaperService() {
         private var locked = false
         private var slide = 0f
         private var overlay = prefs.overlay
+
+        /** Kept so [scheduleNext] can ask the weather whether anything is still moving. */
+        private var lastState: com.sylcolabs.weatherpaper.scene.SceneState? = null
 
         private val drawRunnable = Runnable { drawFrame() }
 
@@ -119,6 +122,7 @@ class WeatherPaperService : WallpaperService() {
 
         private fun drawFrame() {
             val state = SceneStates.current(prefs, repo)
+            lastState = state
             val holder = surfaceHolder
             var canvas: Canvas? = null
             try {
@@ -140,16 +144,18 @@ class WeatherPaperService : WallpaperService() {
         /**
          * Decide when - or whether - to draw again.
          *
-         * A scene with drifting layers runs at [FRAME_MS]. A still one does not spin: if the
-         * clock is showing we wake once at the next minute boundary, and otherwise we stop
-         * completely until something changes.
+         * Motion is a property of the weather, not of the artwork: the scene runs at [FRAME_MS]
+         * only while wind, precipitation or thunder is actually giving it something to do, and
+         * drops straight back to still when that passes. On a calm clear day the wallpaper draws
+         * once and then does nothing at all - which is the whole point of it.
          */
         private fun scheduleNext() {
             handler.removeCallbacks(drawRunnable)
             if (!visible) return
 
             val saving = power?.isPowerSaveMode == true
-            if (Layers.hasMotion && !saving) {
+            val moving = lastState?.let { SceneMotion.animates(it) } ?: false
+            if (moving && !saving) {
                 handler.postDelayed(drawRunnable, FRAME_MS)
                 return
             }

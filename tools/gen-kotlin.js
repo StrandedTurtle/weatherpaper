@@ -1,7 +1,8 @@
 'use strict';
 // Turns the art data into Kotlin the app compiles against.
-//   art/layers.json -> scene/Layers.kt
-//   art/font.json   -> scene/PixelFont.kt
+//   art/layers.json     -> scene/Layers.kt
+//   art/scene-meta.json -> scene/SceneMeta.kt
+//   art/font.json       -> scene/PixelFont.kt
 // Both outputs are generated - edit the JSON and re-run, never the Kotlin.
 const fs = require('fs');
 const path = require('path');
@@ -18,7 +19,18 @@ function read(file, fallback) {
 
 const f = n => (Number.isInteger(n) ? n.toFixed(1) : String(n)) + 'f';
 
+// Depth comes from scene-meta when it is there; otherwise the stack is spread
+// evenly, so a scene with no metadata still fogs back to front sensibly.
+function depthOf(l) {
+  const name = String(l.source || '').replace(/\.png$/, '');
+  const plane = sceneMeta && sceneMeta.planes && sceneMeta.planes.find(p => p.name === name);
+  if (plane && typeof plane.depth === 'number') return plane.depth;
+  const i = layers.indexOf(l);
+  return layers.length > 1 ? i / (layers.length - 1) : 0;
+}
+
 // ---- layers ----
+const sceneMeta = read('art/scene-meta.json', null);
 const manifest = read('art/layers.json', { width: 0, height: 0, anchor: 'bottom', layers: [] });
 const layers = manifest.layers || [];
 
@@ -45,19 +57,71 @@ internal object Layers {
 
     /**
      * @param parallax how far this layer slides as the home screen is swiped, in artwork pixels.
-     * @param sway amplitude of its idle drift, in artwork pixels. Zero for both means it is still.
+     * @param sway amplitude of unconditional idle drift, in artwork pixels.
+     * @param wind how much this layer answers to wind, 0..1. A susceptibility, not an amplitude:
+     *        the scene only moves when there is weather to move it, so a still day costs nothing.
+     * @param depth 0 is infinitely far, 1 is against the lens. Drives how far fog and daylight
+     *        push this plane toward the sky.
      */
-    class Layer(val name: String, val resId: Int, val parallax: Float, val sway: Float)
+    class Layer(
+        val name: String,
+        val resId: Int,
+        val parallax: Float,
+        val sway: Float,
+        val wind: Float,
+        val depth: Float,
+    )
 
     /** Back to front. */
     val ALL: Array<Layer> = arrayOf(${layers.length === 0 ? ')' : '\n' +
-      layers.map(l => `        Layer("${l.name}", R.drawable.${l.resource}, ${f(l.parallax || 0)}, ${f(l.sway || 0)}),`).join('\n') +
+      layers.map(l => `        Layer("${l.name}", R.drawable.${l.resource}, ${f(l.parallax || 0)}, ` +
+        `${f(l.sway || 0)}, ${f(l.wind || 0)}, ${f(depthOf(l))}),`).join('\n') +
       '\n    )'}
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
-    /** True while any layer drifts on its own, which is what decides if a redraw loop is needed. */
-    val hasMotion: Boolean get() = ALL.any { it.sway != 0f }
+    /** True if any layer drifts regardless of the weather. Wind is decided per frame instead. */
+    val hasIdleMotion: Boolean get() = ALL.any { it.sway != 0f }
+
+    /** True if anything in the stack can be moved by wind at all. */
+    val respondsToWind: Boolean get() = ALL.any { it.wind != 0f }
+}
+`;
+
+// ---- scene metadata ----
+// Measured by art/split-layers-v3.js. Generated rather than hand-copied so the
+// window the renderer lights is the window the splitter actually found.
+const meta = sceneMeta;
+const openings = (meta && meta.cabin && meta.cabin.openings) || [];
+const moon = (meta && meta.moon) || null;
+
+const metaKt = `${HEADER}
+${PKG}
+
+/**
+ * Fixed points in the artwork that the renderer needs to aim at.
+ *
+ * All in artwork pixels, measured from the art itself - not guessed, and not hand-copied.
+ */
+internal object SceneMeta {
+
+    /** True when the artwork carried metadata; false leaves every effect that needs it switched off. */
+    const val PRESENT = ${meta !== null}
+
+    /** The moon, on the star plane. Its light is what the scene is lit by. */
+    const val MOON_X = ${moon ? moon.x : 0}
+    const val MOON_Y = ${moon ? moon.y : 0}
+    const val MOON_R = ${moon ? moon.r : 0}
+    const val HAS_MOON = ${moon !== null}
+
+    /**
+     * The cabin's window and doorway, left to right, as x, y, w, h.
+     *
+     * The cabin is unlit in the artwork, so the glow is drawn rather than painted in - which
+     * means it can answer to the weather instead of being fixed.
+     */
+    val WINDOWS: Array<IntArray> = arrayOf(${openings.length === 0 ? ')' : '\n' +
+      openings.map(o => `        intArrayOf(${o.x}, ${o.y}, ${o.w}, ${o.h}),`).join('\n') + '\n    )'}
 }
 `;
 
@@ -114,8 +178,10 @@ ${packed.map(b => '        ' + b.toString() + 'L,').join('\n')}
 
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'Layers.kt'), layersKt);
+fs.writeFileSync(path.join(OUT, 'SceneMeta.kt'), metaKt);
 fs.writeFileSync(path.join(OUT, 'PixelFont.kt'), fontKt);
 
 console.log('generated Layers.kt   (' + layers.length + ' layer(s)' +
   (layers.length ? ' at ' + manifest.width + 'x' + manifest.height : ' - placeholder in use') + ')');
+console.log('generated SceneMeta.kt  (' + openings.length + ' window(s)' + (moon ? ', moon' : '') + ')');
 console.log('generated PixelFont.kt (' + order.length + ' glyphs)');

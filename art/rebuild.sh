@@ -31,7 +31,7 @@ rm -f art/layers/*.png
 
 echo "==> importing and generating"
 node tools/import-layers.js
-node art/apply-parallax.js          # parallax per plane, from scene-meta.json
+node art/apply-plane-motion.js    # parallax/sway/wind per plane, from scene-meta.json
 node tools/gen-kotlin.js
 node tools/gen-thumb.js
 node tools/make-preview.js        # desktop inspector, art/preview/preview.html

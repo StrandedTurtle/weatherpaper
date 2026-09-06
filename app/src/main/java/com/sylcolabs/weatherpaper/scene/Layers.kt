@@ -22,25 +22,39 @@ internal object Layers {
 
     /**
      * @param parallax how far this layer slides as the home screen is swiped, in artwork pixels.
-     * @param sway amplitude of its idle drift, in artwork pixels. Zero for both means it is still.
+     * @param sway amplitude of unconditional idle drift, in artwork pixels.
+     * @param wind how much this layer answers to wind, 0..1. A susceptibility, not an amplitude:
+     *        the scene only moves when there is weather to move it, so a still day costs nothing.
+     * @param depth 0 is infinitely far, 1 is against the lens. Drives how far fog and daylight
+     *        push this plane toward the sky.
      */
-    class Layer(val name: String, val resId: Int, val parallax: Float, val sway: Float)
+    class Layer(
+        val name: String,
+        val resId: Int,
+        val parallax: Float,
+        val sway: Float,
+        val wind: Float,
+        val depth: Float,
+    )
 
     /** Back to front. */
     val ALL: Array<Layer> = arrayOf(
-        Layer("sky", R.drawable.layer_01_sky, 0.0f, 0.0f),
-        Layer("stars", R.drawable.layer_02_stars, 0.0f, 0.0f),
-        Layer("far-haze", R.drawable.layer_03_far_haze, 1.0f, 0.0f),
-        Layer("mid-forest", R.drawable.layer_04_mid_forest, 2.0f, 0.0f),
-        Layer("ground", R.drawable.layer_05_ground, 3.0f, 0.0f),
-        Layer("cabin", R.drawable.layer_06_cabin, 3.0f, 0.0f),
-        Layer("near-forest", R.drawable.layer_07_near_forest, 5.0f, 0.0f),
-        Layer("foreground", R.drawable.layer_08_foreground, 8.0f, 0.0f),
-        Layer("canopy", R.drawable.layer_09_canopy, 8.0f, 0.0f),
+        Layer("sky", R.drawable.layer_01_sky, 0.0f, 0.0f, 0.0f, 0.0f),
+        Layer("stars", R.drawable.layer_02_stars, 0.0f, 0.0f, 0.0f, 0.0f),
+        Layer("far-haze", R.drawable.layer_03_far_haze, 0.0f, 0.0f, 0.15f, 0.15f),
+        Layer("mid-forest", R.drawable.layer_04_mid_forest, 0.0f, 0.0f, 0.3f, 0.3f),
+        Layer("ground", R.drawable.layer_05_ground, 0.0f, 0.0f, 0.0f, 0.45f),
+        Layer("cabin", R.drawable.layer_06_cabin, 0.0f, 0.0f, 0.0f, 0.5f),
+        Layer("near-forest", R.drawable.layer_07_near_forest, 0.0f, 0.0f, 0.6f, 0.7f),
+        Layer("foreground", R.drawable.layer_08_foreground, 0.0f, 0.0f, 0.9f, 0.9f),
+        Layer("canopy", R.drawable.layer_09_canopy, 0.0f, 0.0f, 1.0f, 1.0f),
     )
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
-    /** True while any layer drifts on its own, which is what decides if a redraw loop is needed. */
-    val hasMotion: Boolean get() = ALL.any { it.sway != 0f }
+    /** True if any layer drifts regardless of the weather. Wind is decided per frame instead. */
+    val hasIdleMotion: Boolean get() = ALL.any { it.sway != 0f }
+
+    /** True if anything in the stack can be moved by wind at all. */
+    val respondsToWind: Boolean get() = ALL.any { it.wind != 0f }
 }

@@ -379,16 +379,21 @@ for (let y=0;y<H;y++) for (let x=0;x<W;x++) if (cabin[y*W+x]) { cabinXs.push(x);
 
 // depth: 0 is infinitely far, 1 is against the lens. parallax is in artwork
 // pixels across a full home-screen swipe (slide runs -1..1).
+// depth: 0 is infinitely far, 1 is against the lens.
+// parallax: artwork pixels across a full home-screen swipe. All zero - the scene
+//   is deliberately static, and the launcher in use has a single page anyway.
+// wind: how much this plane answers to wind, 0..1. The scene only animates when
+//   there is weather to animate it, so this is a susceptibility, not an amplitude.
 const PLANES = {
-  '01-sky':        { depth: 0.00, parallax: 0, sway: 0, note: 'full-canvas backdrop; recolour for time of day' },
-  '02-stars':      { depth: 0.00, parallax: 0, sway: 0, note: 'fade out at dawn; holds the moon' },
-  '03-far-haze':   { depth: 0.15, parallax: 1, sway: 0, note: 'first plane fog should thicken' },
-  '04-mid-forest': { depth: 0.30, parallax: 2, sway: 0, note: 'treeline against the sky' },
-  '05-ground':     { depth: 0.45, parallax: 3, sway: 0, note: 'snow accumulates, rain darkens' },
-  '06-cabin':      { depth: 0.50, parallax: 3, sway: 0, note: 'stands on the ground; matches its parallax' },
-  '07-near-forest':{ depth: 0.70, parallax: 5, sway: 0, note: 'flanking trunks' },
-  '08-foreground': { depth: 0.90, parallax: 8, sway: 0, note: 'nearest growth; rain falls in front of this' },
-  '09-canopy':     { depth: 1.00, parallax: 8, sway: 0, note: 'overhead leaves; drips in rain' },
+  '01-sky':        { depth: 0.00, parallax: 0, sway: 0, wind: 0.00, note: 'full-canvas backdrop; recoloured for time of day' },
+  '02-stars':      { depth: 0.00, parallax: 0, sway: 0, wind: 0.00, note: 'fades with cloud, fog and daylight; holds the moon' },
+  '03-far-haze':   { depth: 0.15, parallax: 0, sway: 0, wind: 0.15, note: 'first plane fog thickens' },
+  '04-mid-forest': { depth: 0.30, parallax: 0, sway: 0, wind: 0.30, note: 'treeline against the sky' },
+  '05-ground':     { depth: 0.45, parallax: 0, sway: 0, wind: 0.00, note: 'the floor does not sway' },
+  '06-cabin':      { depth: 0.50, parallax: 0, sway: 0, wind: 0.00, note: 'a building does not sway; carries the lit window' },
+  '07-near-forest':{ depth: 0.70, parallax: 0, sway: 0, wind: 0.60, note: 'flanking trunks and their foliage' },
+  '08-foreground': { depth: 0.90, parallax: 0, sway: 0, wind: 0.90, note: 'undergrowth; whips about in a gale' },
+  '09-canopy':     { depth: 1.00, parallax: 0, sway: 0, wind: 1.00, note: 'overhead leaves; moves most' },
 };
 
 fs.writeFileSync(OUT + '/scene-meta.json', JSON.stringify({

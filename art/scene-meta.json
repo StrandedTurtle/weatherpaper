@@ -20,7 +20,8 @@
       "depth": 0,
       "parallax": 0,
       "sway": 0,
-      "note": "full-canvas backdrop; recolour for time of day"
+      "wind": 0,
+      "note": "full-canvas backdrop; recoloured for time of day"
     },
     {
       "name": "02-stars",
@@ -28,63 +29,71 @@
       "depth": 0,
       "parallax": 0,
       "sway": 0,
-      "note": "fade out at dawn; holds the moon"
+      "wind": 0,
+      "note": "fades with cloud, fog and daylight; holds the moon"
     },
     {
       "name": "03-far-haze",
       "order": 2,
       "depth": 0.15,
-      "parallax": 1,
+      "parallax": 0,
       "sway": 0,
-      "note": "first plane fog should thicken"
+      "wind": 0.15,
+      "note": "first plane fog thickens"
     },
     {
       "name": "04-mid-forest",
       "order": 3,
       "depth": 0.3,
-      "parallax": 2,
+      "parallax": 0,
       "sway": 0,
+      "wind": 0.3,
       "note": "treeline against the sky"
     },
     {
       "name": "05-ground",
       "order": 4,
       "depth": 0.45,
-      "parallax": 3,
+      "parallax": 0,
       "sway": 0,
-      "note": "snow accumulates, rain darkens"
+      "wind": 0,
+      "note": "the floor does not sway"
     },
     {
       "name": "06-cabin",
       "order": 5,
       "depth": 0.5,
-      "parallax": 3,
+      "parallax": 0,
       "sway": 0,
-      "note": "stands on the ground; matches its parallax"
+      "wind": 0,
+      "note": "a building does not sway; carries the lit window"
     },
     {
       "name": "07-near-forest",
       "order": 6,
       "depth": 0.7,
-      "parallax": 5,
+      "parallax": 0,
       "sway": 0,
-      "note": "flanking trunks"
+      "wind": 0.6,
+      "note": "flanking trunks and their foliage"
     },
     {
       "name": "08-foreground",
       "order": 7,
       "depth": 0.9,
-      "parallax": 8,
+      "parallax": 0,
       "sway": 0,
-      "note": "nearest growth; rain falls in front of this"
+      "wind": 0.9,
+      "note": "undergrowth; whips about in a gale"
     },
     {
       "name": "09-canopy",
       "order": 8,
       "depth": 1,
-      "parallax": 8,
+      "parallax": 0,
       "sway": 0,
-      "note": "overhead leaves; drips in rain"
+      "wind": 1,
+      "note": "overhead leaves; moves most"
     }
   ],
   "moon": {
