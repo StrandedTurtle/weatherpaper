@@ -41,6 +41,25 @@ internal data class SceneState(
 
     val isDay: Boolean get() = hour in sunrise..sunset
 
+    /**
+     * Position within the 24h cycle, 0 at midnight, 0.25 at sunrise, 0.5 at solar noon,
+     * 0.75 at sunset, wrapping back to 0. Piecewise-linear between those four anchors so the
+     * time-of-day frames stay pinned to the real sunrise/sunset rather than to clock hours.
+     */
+    fun dayPhase(): Float {
+        val rise = sunrise.coerceIn(0.01f, 23.98f)
+        val set = sunset.coerceIn(rise + 0.01f, 23.99f)
+        val noon = (rise + set) / 2f
+        val h = ((hour % 24f) + 24f) % 24f
+        val p = when {
+            h < rise -> 0.25f * (h / rise)
+            h < noon -> 0.25f + 0.25f * ((h - rise) / (noon - rise))
+            h < set -> 0.5f + 0.25f * ((h - noon) / (set - noon))
+            else -> 0.75f + 0.25f * ((h - set) / (24f - set))
+        }
+        return p.coerceIn(0f, 0.9999f)
+    }
+
     companion object {
         /** WMO 4677 weather codes, as returned by Open-Meteo's `weather_code`. */
         fun precipFor(code: Int): Precipitation = when (code) {
