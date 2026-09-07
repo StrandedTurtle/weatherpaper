@@ -7,7 +7,6 @@ import android.util.AttributeSet
 import android.view.MotionEvent
 import android.view.View
 import com.sylcolabs.weatherpaper.scene.OverlayConfig
-import com.sylcolabs.weatherpaper.scene.SceneMotion
 import com.sylcolabs.weatherpaper.scene.SceneRenderer
 import com.sylcolabs.weatherpaper.scene.SceneState
 
@@ -52,7 +51,7 @@ internal class PreviewView @JvmOverloads constructor(
 
     override fun onDraw(canvas: Canvas) {
         renderer.render(canvas, state, SystemClock.elapsedRealtime(), 0f, false, readout)
-        if (animating && SceneMotion.animates(state)) postInvalidateDelayed(FRAME_MS)
+        if (animating && renderer.isAnimated(state)) postInvalidateDelayed(FRAME_MS)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

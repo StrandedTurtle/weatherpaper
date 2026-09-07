@@ -1,9 +1,9 @@
 'use strict';
 // Turns the art data into Kotlin the app compiles against.
-//   art/layers.json     -> scene/Layers.kt
+//   art/frames.json     -> scene/Frames.kt
 //   art/scene-meta.json -> scene/SceneMeta.kt
 //   art/font.json       -> scene/PixelFont.kt
-// Both outputs are generated - edit the JSON and re-run, never the Kotlin.
+// All three outputs are generated - edit the JSON and re-run, never the Kotlin.
 const fs = require('fs');
 const path = require('path');
 
@@ -16,82 +16,70 @@ function read(file, fallback) {
   const p = path.join(ROOT, file);
   return fs.existsSync(p) ? JSON.parse(fs.readFileSync(p, 'utf8')) : fallback;
 }
-
 const f = n => (Number.isInteger(n) ? n.toFixed(1) : String(n)) + 'f';
 
-// Depth comes from scene-meta when it is there; otherwise the stack is spread
-// evenly, so a scene with no metadata still fogs back to front sensibly.
-function depthOf(l) {
-  const name = String(l.source || '').replace(/\.png$/, '');
-  const plane = sceneMeta && sceneMeta.planes && sceneMeta.planes.find(p => p.name === name);
-  if (plane && typeof plane.depth === 'number') return plane.depth;
-  const i = layers.indexOf(l);
-  return layers.length > 1 ? i / (layers.length - 1) : 0;
-}
+// ------------------------------------------------------------------ frames
+const manifest = read('art/frames.json', { width: 0, height: 0, anchor: 'bottom', frames: [] });
+const frames = manifest.frames || [];
 
-// ---- layers ----
-const sceneMeta = read('art/scene-meta.json', null);
-const manifest = read('art/layers.json', { width: 0, height: 0, anchor: 'bottom', layers: [] });
-const layers = manifest.layers || [];
-
-const layersKt = `${HEADER}
+const framesKt = `${HEADER}
 ${PKG}
 
 import com.sylcolabs.weatherpaper.R
 
 /**
- * The scene, as a stack of images composited back to front.
+ * The scene, as one complete image per time of day.
  *
- * Imported from art/layers/ by tools/import-layers.js. Nothing here assumes anything about what
- * the picture contains - the canvas size comes from the artwork itself, and an empty list simply
- * means no art has been imported yet.
+ * Imported from art/frames/ by tools/import-frames.js, which are themselves relit from the
+ * source planes by art/relight.js. The renderer cross-fades between the two frames either side
+ * of the current time, wrapping past midnight, so every frame shares its geometry with the rest
+ * and differs only in light.
  */
-internal object Layers {
+internal object Frames {
 
-    /** The artwork's own pixel dimensions; 0 when nothing has been imported. */
     const val WIDTH = ${manifest.width || 0}
     const val HEIGHT = ${manifest.height || 0}
 
-    /** How the artwork sits in a screen of a different shape once it has been scaled to cover. */
+    /** How the artwork sits in a screen of a different shape once scaled to cover. */
     const val ANCHOR_BOTTOM = ${manifest.anchor !== 'centre' && manifest.anchor !== 'center'}
 
-    /**
-     * @param parallax how far this layer slides as the home screen is swiped, in artwork pixels.
-     * @param sway amplitude of unconditional idle drift, in artwork pixels.
-     * @param wind how much this layer answers to wind, 0..1. A susceptibility, not an amplitude:
-     *        the scene only moves when there is weather to move it, so a still day costs nothing.
-     * @param depth 0 is infinitely far, 1 is against the lens. Drives how far fog and daylight
-     *        push this plane toward the sky.
-     */
-    class Layer(
-        val name: String,
-        val resId: Int,
-        val parallax: Float,
-        val sway: Float,
-        val wind: Float,
-        val depth: Float,
-    )
+    /** @param phase position in the day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
+    class Frame(val name: String, val resId: Int, val phase: Float)
 
-    /** Back to front. */
-    val ALL: Array<Layer> = arrayOf(${layers.length === 0 ? ')' : '\n' +
-      layers.map(l => `        Layer("${l.name}", R.drawable.${l.resource}, ${f(l.parallax || 0)}, ` +
-        `${f(l.sway || 0)}, ${f(l.wind || 0)}, ${f(depthOf(l))}),`).join('\n') +
-      '\n    )'}
+    /** Sorted by phase. */
+    val ALL: Array<Frame> = arrayOf(${frames.length === 0 ? ')' : '\n' +
+  frames.map(fr => `        Frame("${fr.name}", R.drawable.${fr.resource}, ${f(fr.phase)}),`).join('\n') +
+  '\n    )'}
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
-    /** True if any layer drifts regardless of the weather. Wind is decided per frame instead. */
-    val hasIdleMotion: Boolean get() = ALL.any { it.sway != 0f }
+    /**
+     * The two frames bracketing [phase], and how far between them we are.
+     *
+     * Wraps past midnight, so the last frame of the day blends back into the first.
+     */
+    fun bracket(phase: Float): Triple<Int, Int, Float> {
+        val n = ALL.size
+        if (n <= 1) return Triple(0, 0, 0f)
+        val p = ((phase % 1f) + 1f) % 1f
 
-    /** True if anything in the stack can be moved by wind at all. */
-    val respondsToWind: Boolean get() = ALL.any { it.wind != 0f }
+        var lo = n - 1
+        for (i in ALL.indices) if (ALL[i].phase <= p) lo = i else break
+        val hi = (lo + 1) % n
+
+        val from = ALL[lo].phase
+        var span = ALL[hi].phase - from
+        if (span <= 0f) span += 1f                       // wrapping the midnight seam
+        var travelled = p - from
+        if (travelled < 0f) travelled += 1f
+
+        return Triple(lo, hi, (travelled / span).coerceIn(0f, 1f))
+    }
 }
 `;
 
-// ---- scene metadata ----
-// Measured by art/split-layers-v3.js. Generated rather than hand-copied so the
-// window the renderer lights is the window the splitter actually found.
-const meta = sceneMeta;
+// --------------------------------------------------------------- scene meta
+const meta = read('art/scene-meta.json', null);
 const openings = (meta && meta.cabin && meta.cabin.openings) || [];
 const moon = (meta && meta.moon) || null;
 
@@ -105,10 +93,9 @@ ${PKG}
  */
 internal object SceneMeta {
 
-    /** True when the artwork carried metadata; false leaves every effect that needs it switched off. */
+    /** True when the artwork carried metadata; false leaves every effect that needs it off. */
     const val PRESENT = ${meta !== null}
 
-    /** The moon, on the star plane. Its light is what the scene is lit by. */
     const val MOON_X = ${moon ? moon.x : 0}
     const val MOON_Y = ${moon ? moon.y : 0}
     const val MOON_R = ${moon ? moon.r : 0}
@@ -117,15 +104,15 @@ internal object SceneMeta {
     /**
      * The cabin's window and doorway, left to right, as x, y, w, h.
      *
-     * The cabin is unlit in the artwork, so the glow is drawn rather than painted in - which
+     * The cabin is unlit in every frame, so the lamp is drawn rather than painted in - which
      * means it can answer to the weather instead of being fixed.
      */
     val WINDOWS: Array<IntArray> = arrayOf(${openings.length === 0 ? ')' : '\n' +
-      openings.map(o => `        intArrayOf(${o.x}, ${o.y}, ${o.w}, ${o.h}),`).join('\n') + '\n    )'}
+  openings.map(o => `        intArrayOf(${o.x}, ${o.y}, ${o.w}, ${o.h}),`).join('\n') + '\n    )'}
 }
 `;
 
-// ---- font ----
+// -------------------------------------------------------------------- font
 const font = read('art/font.json', { w: 5, h: 7, tracking: 1, glyphs: {} });
 const order = Object.keys(font.glyphs);
 const packed = order.map(function (ch) {
@@ -146,8 +133,7 @@ ${PKG}
 /**
  * The bitmap font used by the home-screen readout, from art/font.json.
  *
- * Each glyph packs into one Long, bit (row * WIDTH + col) set where there is ink. [INDEX] maps a
- * character to its slot; anything absent falls back to '?'.
+ * Each glyph packs into one Long, bit (row * WIDTH + col) set where there is ink.
  */
 internal object PixelFont {
     const val WIDTH = ${font.w}
@@ -168,7 +154,6 @@ ${packed.map(b => '        ' + b.toString() + 'L,').join('\n')}
         return GLYPHS[if (i >= 0) i else FALLBACK]
     }
 
-    /** True where the glyph has ink at (col, row). */
     fun ink(g: Long, col: Int, row: Int): Boolean = (g ushr (row * WIDTH + col)) and 1L == 1L
 
     fun width(text: String, scale: Int): Int =
@@ -177,11 +162,11 @@ ${packed.map(b => '        ' + b.toString() + 'L,').join('\n')}
 `;
 
 fs.mkdirSync(OUT, { recursive: true });
-fs.writeFileSync(path.join(OUT, 'Layers.kt'), layersKt);
+fs.writeFileSync(path.join(OUT, 'Frames.kt'), framesKt);
 fs.writeFileSync(path.join(OUT, 'SceneMeta.kt'), metaKt);
 fs.writeFileSync(path.join(OUT, 'PixelFont.kt'), fontKt);
 
-console.log('generated Layers.kt   (' + layers.length + ' layer(s)' +
-  (layers.length ? ' at ' + manifest.width + 'x' + manifest.height : ' - placeholder in use') + ')');
-console.log('generated SceneMeta.kt  (' + openings.length + ' window(s)' + (moon ? ', moon' : '') + ')');
+console.log('generated Frames.kt    (' + frames.length + ' frame(s)' +
+  (frames.length ? ' at ' + manifest.width + 'x' + manifest.height : ' - none imported') + ')');
+console.log('generated SceneMeta.kt (' + openings.length + ' window(s)' + (moon ? ', moon' : '') + ')');
 console.log('generated PixelFont.kt (' + order.length + ' glyphs)');

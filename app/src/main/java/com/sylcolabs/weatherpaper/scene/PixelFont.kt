@@ -5,8 +5,7 @@ package com.sylcolabs.weatherpaper.scene
 /**
  * The bitmap font used by the home-screen readout, from art/font.json.
  *
- * Each glyph packs into one Long, bit (row * WIDTH + col) set where there is ink. [INDEX] maps a
- * character to its slot; anything absent falls back to '?'.
+ * Each glyph packs into one Long, bit (row * WIDTH + col) set where there is ink.
  */
 internal object PixelFont {
     const val WIDTH = 5
@@ -70,7 +69,6 @@ internal object PixelFont {
         return GLYPHS[if (i >= 0) i else FALLBACK]
     }
 
-    /** True where the glyph has ink at (col, row). */
     fun ink(g: Long, col: Int, row: Int): Boolean = (g ushr (row * WIDTH + col)) and 1L == 1L
 
     fun width(text: String, scale: Int): Int =

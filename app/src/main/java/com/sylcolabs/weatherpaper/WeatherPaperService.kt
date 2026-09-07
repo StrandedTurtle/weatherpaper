@@ -13,7 +13,6 @@ import android.os.PowerManager
 import android.os.SystemClock
 import android.service.wallpaper.WallpaperService
 import android.view.SurfaceHolder
-import com.sylcolabs.weatherpaper.scene.SceneMotion
 import com.sylcolabs.weatherpaper.scene.SceneRenderer
 import com.sylcolabs.weatherpaper.weather.WeatherRepository
 
@@ -154,7 +153,7 @@ class WeatherPaperService : WallpaperService() {
             if (!visible) return
 
             val saving = power?.isPowerSaveMode == true
-            val moving = lastState?.let { SceneMotion.animates(it) } ?: false
+            val moving = lastState?.let { renderer.isAnimated(it) } ?: false
             if (moving && !saving) {
                 handler.postDelayed(drawRunnable, FRAME_MS)
                 return

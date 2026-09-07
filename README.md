@@ -84,9 +84,7 @@ One self-contained file — the nine layers, the scene metadata and the readout
 font are all inlined, so it opens straight off disk with no server. It renders
 the scene exactly as `SceneRenderer.kt` does: same whole-number scale, same
 bottom-anchored crop, same per-layer parallax offset. Verified against
-`tools/preview-layers.js` at zero differing pixels.
 
-It carries a port of `SceneLighting`, `SceneMotion` and `SceneEffects`, so you can
 drive the whole weather range — eight presets plus hour, cloud, wind, moon phase,
 sky condition, precipitation and thunder — and watch the scene answer. **Animate**
 runs it at the same 12fps the wallpaper uses, and the panel tells you whether the
@@ -102,7 +100,7 @@ phone.
 There is also a quick static render, if you just want a PNG:
 
 ```sh
-node tools/preview-layers.js 1080 2400
+node tools/preview-weather.js             # every weather state over real frames
 ```
 
 ---
@@ -142,10 +140,11 @@ key, no traffic beyond the weather lookup.
 ## Working on it
 
 ```sh
-node tools/import-layers.js               # art/layers/*.png -> manifest + app resources
-node tools/gen-kotlin.js                  # -> scene/Layers.kt, scene/PixelFont.kt
+node art/relight.js                        # source planes -> one relit frame per time of day
+node tools/import-frames.js               # art/frames/*.png -> manifest + app resources
+node tools/gen-kotlin.js                  # -> scene/Frames.kt, SceneMeta.kt, PixelFont.kt
 node tools/gen-thumb.js                   # wallpaper picker tile
-node tools/preview-layers.js 1080 2400    # flatten and crop as a phone would, without building
+node tools/preview-weather.js             # every weather state over real frames
 ```
 
 Node 18+ only; there are no npm dependencies. To build the app locally you need JDK 17 and the
@@ -163,7 +162,7 @@ art/layers/                your exported PNGs go here
 tools/                     importers and generators
 ```
 
-`scene/Layers.kt` and `scene/PixelFont.kt` are **generated** — edit `art/layers.json` and
+`scene/Frames.kt`, `scene/SceneMeta.kt` and `scene/PixelFont.kt` are **generated** — edit `art/frames.json` and
 `art/font.json` and re-run the generator instead.
 
 ---

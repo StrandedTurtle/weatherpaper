@@ -4,131 +4,135 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
+import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
+import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Composites the scene: the imported layers, back to front, then the readout.
+ * Draws the scene: the time-of-day artwork, graded for cloud, with live weather over it.
  *
- * It knows nothing about what the artwork depicts. The canvas size comes from the images
- * themselves, they are scaled by a whole number so pixels stay square, and the result is
- * cropped to the screen.
+ * The artwork is a set of complete frames, each relit offline from the source planes by
+ * art/relight.js. Lighting is therefore a property of the art rather than a filter applied at
+ * runtime - a colour matrix cannot know that the sky wants to go blue while the canopy goes
+ * green, which is why a single night image lifted toward day always read flat.
  *
- * What the weather does to it lives in [SceneLighting] (colour), [SceneMotion] (wind) and
- * [SceneEffects] (precipitation, lightning, the cabin lamp) - all pure functions of the state, so
- * the settings preview and the wallpaper cannot show different scenes.
+ * What is left at runtime is what genuinely has to be: which two frames to blend, how far
+ * between them, and the weather on top.
  */
 internal class SceneRenderer(private val context: Context) {
 
-    private var bitmaps: Array<Bitmap?> = emptyArray()
-    private var loaded = false
+    private var loIndex = -1
+    private var hiIndex = -1
+    private var loBitmap: Bitmap? = null
+    private var hiBitmap: Bitmap? = null
 
     private var screenW = 0
     private var screenH = 0
 
-    /** Screen pixels per artwork pixel. Always a whole number, which is what keeps pixels square. */
+    /** Screen pixels per artwork pixel. Always whole, which is what keeps pixels square. */
     var unit = 1
         private set
 
-    /** Where the artwork sits on screen once scaled; may extend past the edges. */
     private val bounds = RectF()
     private val src = Rect()
     private val dst = Rect()
 
-    private val blit = Paint().apply {
-        isFilterBitmap = false
-        isAntiAlias = false
-        isDither = false
+    private val basePaint = Paint().apply {
+        isFilterBitmap = false; isAntiAlias = false; isDither = false
+    }
+    private val blendPaint = Paint().apply {
+        isFilterBitmap = false; isAntiAlias = false; isDither = false
     }
     private val fill = Paint()
+    private var gradedFor = -1f
 
-    val hasArt: Boolean get() = !Layers.isEmpty && Layers.WIDTH > 0 && Layers.HEIGHT > 0
-
-    private fun load() {
-        if (loaded) return
-        loaded = true
-        if (Layers.isEmpty) return
-        // inScaled = false: decode at the artwork's own size, ignoring screen density.
-        val opts = BitmapFactory.Options().apply {
-            inScaled = false
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        bitmaps = Array(Layers.ALL.size) { i ->
-            runCatching { BitmapFactory.decodeResource(context.resources, Layers.ALL[i].resId, opts) }.getOrNull()
-        }
-    }
+    val hasArt: Boolean get() = !Frames.isEmpty && Frames.WIDTH > 0 && Frames.HEIGHT > 0
 
     fun resize(width: Int, height: Int) {
         screenW = width
         screenH = height
         if (width <= 0 || height <= 0) return
-        load()
 
         if (!hasArt) {
             unit = 1
             bounds.set(0f, 0f, width.toFloat(), height.toFloat())
             return
         }
-
-        // Scale up by a whole number until the artwork covers the screen, then crop.
-        unit = max(1, ceil(max(width.toDouble() / Layers.WIDTH, height.toDouble() / Layers.HEIGHT)).toInt())
-        val w = Layers.WIDTH * unit
-        val h = Layers.HEIGHT * unit
-        val left = ((width - w) / 2f)
-        val top = if (Layers.ANCHOR_BOTTOM) (height - h).toFloat() else ((height - h) / 2f)
+        unit = max(1, ceil(max(width.toDouble() / Frames.WIDTH, height.toDouble() / Frames.HEIGHT)).toInt())
+        val w = Frames.WIDTH * unit
+        val h = Frames.HEIGHT * unit
+        val left = (width - w) / 2f
+        val top = if (Frames.ANCHOR_BOTTOM) (height - h).toFloat() else (height - h) / 2f
         bounds.set(left, top, left + w, top + h)
-        src.set(0, 0, Layers.WIDTH, Layers.HEIGHT)
+        src.set(0, 0, Frames.WIDTH, Frames.HEIGHT)
+        dst.set(left.roundToInt(), top.roundToInt(), (left + w).roundToInt(), (top + h).roundToInt())
+    }
+
+    /**
+     * Only the two frames in view are held. The bracket shifts a handful of times a day, so
+     * re-decoding on the change costs far less than keeping every frame resident.
+     */
+    private fun ensureFrames(lo: Int, hi: Int) {
+        if (lo == loIndex && hi == hiIndex) return
+        val opts = BitmapFactory.Options().apply {
+            inScaled = false
+            inPreferredConfig = Bitmap.Config.ARGB_8888
+        }
+        fun decode(i: Int): Bitmap? =
+            runCatching { BitmapFactory.decodeResource(context.resources, Frames.ALL[i].resId, opts) }.getOrNull()
+
+        // Advancing through the day usually shifts hi into lo, so reuse rather than re-decode.
+        val newLo = if (lo == hiIndex) hiBitmap else if (lo == loIndex) loBitmap else decode(lo)
+        val newHi = if (hi == loIndex) loBitmap else if (hi == hiIndex) hiBitmap else decode(hi)
+        if (loBitmap !== newLo && loBitmap !== newHi) loBitmap?.recycle()
+        if (hiBitmap !== newLo && hiBitmap !== newHi) hiBitmap?.recycle()
+        loBitmap = newLo
+        hiBitmap = newHi
+        loIndex = lo
+        hiIndex = hi
+    }
+
+    /** Cloud drains colour and light. The one grade still worth doing at runtime. */
+    private fun grade(cloud: Float) {
+        if (abs(cloud - gradedFor) < 0.02f) return
+        gradedFor = cloud
+        if (cloud <= 0.02f) {
+            basePaint.colorFilter = null
+            blendPaint.colorFilter = null
+            return
+        }
+        val dim = 1f - 0.22f * cloud
+        val m = ColorMatrix().apply { setSaturation(1f - 0.55f * cloud) }
+        m.postConcat(ColorMatrix(floatArrayOf(
+            dim, 0f, 0f, 0f, 0f,
+            0f, dim, 0f, 0f, 0f,
+            0f, 0f, dim * 1.02f, 0f, 0f,   // a touch of blue left in, so overcast reads cold
+            0f, 0f, 0f, 1f, 0f,
+        )))
+        val filter = ColorMatrixColorFilter(m)
+        basePaint.colorFilter = filter
+        blendPaint.colorFilter = filter
     }
 
     fun release() {
-        for (b in bitmaps) b?.recycle()
-        bitmaps = emptyArray()
-        loaded = false
+        loBitmap?.recycle()
+        if (hiBitmap !== loBitmap) hiBitmap?.recycle()
+        loBitmap = null
+        hiBitmap = null
+        loIndex = -1
+        hiIndex = -1
     }
 
-    /** Horizontal offset for a layer, in screen pixels: parallax plus whatever the wind is doing. */
-    private fun offsetFor(layer: Layers.Layer, index: Int, timeMs: Long, slide: Float, st: SceneState): Int {
-        val px = slide * layer.parallax + SceneMotion.offsetFor(layer, index, timeMs, st)
-        return (px * unit).roundToInt()
-    }
+    /** True when something is moving, which is what decides whether a redraw loop is needed. */
+    fun isAnimated(state: SceneState): Boolean =
+        state.precip != Precipitation.NONE || state.thunder || state.condition == SkyCondition.FOG
 
-    /**
-     * Per-plane colour filters, rebuilt only when the light actually changes.
-     *
-     * The scene sits on one state for minutes at a time, so the filters are cached against a
-     * coarse signature of it: without that, an animating frame would allocate nine
-     * ColorMatrixColorFilters twelve times a second to say the same thing each time.
-     */
-    private var filters: Array<ColorMatrixColorFilter?> = emptyArray()
-    private var filterKey = Int.MIN_VALUE
-
-    private fun lightingKey(st: SceneState): Int {
-        var k = (SceneLighting.daylight(st) * 64f).toInt()
-        k = k * 67 + (SceneLighting.haze(st) * 64f).toInt()
-        k = k * 67 + (st.cloud * 32f).toInt()
-        k = k * 67 + (SceneLighting.moonIllumination(st) * 16f).toInt()
-        k = k * 67 + (SceneLighting.twilight(st) * 32f).toInt()
-        return k
-    }
-
-    private fun ensureFilters(st: SceneState) {
-        val key = lightingKey(st)
-        if (key == filterKey && filters.size == Layers.ALL.size) return
-        filterKey = key
-        filters = Array(Layers.ALL.size) { SceneLighting.filterFor(st, Layers.ALL[it].depth) }
-    }
-
-    /**
-     * Draw one frame.
-     *
-     * @param slide home-screen scroll offset, -1..1, from onOffsetsChanged.
-     * @param locked true on the lock screen, where the readout is not drawn.
-     */
     fun render(
         canvas: Canvas,
         state: SceneState,
@@ -138,44 +142,25 @@ internal class SceneRenderer(private val context: Context) {
         overlay: OverlayConfig,
     ) {
         if (screenW <= 0 || screenH <= 0) return
-        load()
 
         if (!hasArt) {
             drawPlaceholder(canvas)
         } else {
-            // Fill first: a layer sliding on parallax can expose the edge behind it.
+            val (lo, hi, blend) = Frames.bracket(state.dayPhase())
+            ensureFrames(lo, hi)
+            grade(state.cloud)
+
             fill.color = BACKDROP
             canvas.drawRect(0f, 0f, screenW.toFloat(), screenH.toFloat(), fill)
 
-            ensureFilters(state)
-            val glow = SceneLighting.windowGlow(state)
-
-            for (i in Layers.ALL.indices) {
-                val layer = Layers.ALL[i]
-                val bmp = bitmaps.getOrNull(i) ?: continue
-                if (bmp.isRecycled) continue
-                val dx = offsetFor(layer, i, timeMs, slide, state)
-                dst.set(
-                    (bounds.left.roundToInt() + dx),
-                    bounds.top.roundToInt(),
-                    (bounds.right.roundToInt() + dx),
-                    bounds.bottom.roundToInt(),
-                )
-                val alpha = SceneLighting.alphaFor(layer.name, state)
-                if (alpha > 0) {
-                    blit.colorFilter = filters.getOrNull(i)
-                    blit.alpha = alpha
-                    canvas.drawBitmap(bmp, src, dst, blit)
-                    blit.colorFilter = null
-                    blit.alpha = 255
-                }
-                // Light the window as soon as the cabin is down, so the near foliage and any
-                // weather still pass in front of it.
-                if (layer.name == "cabin") SceneEffects.drawWindowGlow(canvas, glow, bounds, unit.toFloat())
+            basePaint.alpha = 255
+            loBitmap?.takeIf { !it.isRecycled }?.let { canvas.drawBitmap(it, src, dst, basePaint) }
+            if (blend > 0.004f) {
+                blendPaint.alpha = (blend * 255f).roundToInt().coerceIn(0, 255)
+                hiBitmap?.takeIf { !it.isRecycled }?.let { canvas.drawBitmap(it, src, dst, blendPaint) }
             }
 
-            SceneEffects.drawPrecipitation(canvas, state, timeMs, bounds, unit.toFloat())
-            SceneEffects.drawLightning(canvas, SceneEffects.lightning(state, timeMs), screenW, screenH)
+            drawWeather(canvas, state, timeMs)
         }
 
         // Home screen only. On the lock screen this pass is simply skipped.
@@ -184,12 +169,40 @@ internal class SceneRenderer(private val context: Context) {
         }
     }
 
+    private fun drawWeather(canvas: Canvas, state: SceneState, timeMs: Long) {
+        val u = unit.toFloat()
+        val wind = state.wind.coerceIn(0f, 1f)
+
+        val fogAmount = when {
+            state.condition == SkyCondition.FOG -> 0.85f
+            state.precip != Precipitation.NONE -> 0.14f
+            else -> 0f
+        }
+        Effects.fog(canvas, bounds, u, timeMs, fogAmount, wind, FOG)
+
+        when (state.precip) {
+            Precipitation.DRIZZLE -> Effects.rain(canvas, bounds, u, timeMs, 0.3f, wind, RAIN)
+            Precipitation.RAIN -> Effects.rain(canvas, bounds, u, timeMs, 0.62f, wind, RAIN)
+            Precipitation.HEAVY_RAIN -> Effects.rain(canvas, bounds, u, timeMs, 1f, wind, RAIN)
+            Precipitation.SNOW -> Effects.snow(canvas, bounds, u, timeMs, 0.7f, wind, SNOW)
+            Precipitation.NONE -> Unit
+        }
+
+        // The lamp is the one light added rather than filtered, so it answers to the weather.
+        val daylight = smoothstep(-0.10f, 0.45f, state.sunAltitude())
+        Effects.drawWindows(canvas, Effects.windowGlow(state, daylight), bounds, u)
+
+        if (state.thunder) Effects.flash(canvas, bounds, Effects.lightning(timeMs), LIGHTNING)
+    }
+
+    private fun smoothstep(e0: Float, e1: Float, x: Float): Float {
+        if (e1 <= e0) return if (x >= e1) 1f else 0f
+        val t = ((x - e0) / (e1 - e0)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
+    }
+
     private fun placeholderUnit(): Float = max(1f, screenH / 280f)
 
-    /**
-     * Shown until artwork is imported: a flat ground with a marker, so an install without art is
-     * obviously waiting for something rather than looking broken.
-     */
     private fun drawPlaceholder(canvas: Canvas) {
         fill.color = BACKDROP
         canvas.drawRect(0f, 0f, screenW.toFloat(), screenH.toFloat(), fill)
@@ -200,7 +213,10 @@ internal class SceneRenderer(private val context: Context) {
     }
 
     private companion object {
-        /** Neutral dark ground behind the artwork. Not a design choice about the scene itself. */
         const val BACKDROP = 0xFF101314.toInt()
+        const val RAIN = 0xFFBFD4DC.toInt()
+        const val SNOW = 0xFFF2F8FA.toInt()
+        const val FOG = 0xFFB6C6C2.toInt()
+        const val LIGHTNING = 0xFFE8F4FF.toInt()
     }
 }

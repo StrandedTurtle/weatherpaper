@@ -9,10 +9,9 @@ package com.sylcolabs.weatherpaper.scene
  */
 internal object SceneMeta {
 
-    /** True when the artwork carried metadata; false leaves every effect that needs it switched off. */
+    /** True when the artwork carried metadata; false leaves every effect that needs it off. */
     const val PRESENT = true
 
-    /** The moon, on the star plane. Its light is what the scene is lit by. */
     const val MOON_X = 72
     const val MOON_Y = 44
     const val MOON_R = 3
@@ -21,7 +20,7 @@ internal object SceneMeta {
     /**
      * The cabin's window and doorway, left to right, as x, y, w, h.
      *
-     * The cabin is unlit in the artwork, so the glow is drawn rather than painted in - which
+     * The cabin is unlit in every frame, so the lamp is drawn rather than painted in - which
      * means it can answer to the weather instead of being fixed.
      */
     val WINDOWS: Array<IntArray> = arrayOf(

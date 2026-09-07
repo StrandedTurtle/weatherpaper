@@ -73,7 +73,7 @@ and lighting needs the moon separable from the sky it sits in.
 `parallax` is **0 on every plane** — the scene is deliberately static. `sway` is
 unconditional drift and is also 0. What moves the scene is `wind`, a per-plane
 *susceptibility* between 0 and 1: the sky, ground and cabin do not move at all,
-the canopy moves most. `SceneMotion` multiplies that by the live wind speed each
+the canopy moves most. (Per-plane motion is currently unused: the frames are flat, and
 frame, so one number covers dead calm through a gale and a still day costs
 nothing.
 
@@ -133,10 +133,11 @@ wallpaper rather than the picture:
 ## The loop
 
 ```sh
-node tools/import-layers.js                 # art/layers/*.png -> art/layers.json + app resources
-node tools/gen-kotlin.js                    # -> scene/Layers.kt
+node art/relight.js                         # source planes -> one relit frame per time of day
+node tools/import-frames.js                 # art/frames/*.png -> art/frames.json + resources
+node tools/gen-kotlin.js                    # -> scene/Frames.kt
 node tools/gen-thumb.js                     # wallpaper picker tile, flattened from your layers
-node tools/preview-layers.js 1080 2400      # see it cropped to a phone, without building
+node tools/preview-weather.js               # every weather state over real frames
 ```
 
 Commit and push; CI builds an installable APK (Actions → latest run → download the artifact).
@@ -203,3 +204,36 @@ Listed so they are not a surprise later, not to be answered now:
 `art/font.json` — the 5×7 bitmap font for the readout. `#` is ink, `.` is empty, rows separated by
 `/`. Edit it directly and re-run `gen-kotlin.js`; it is plain text and meant to be readable.
 Replace it whenever you like.
+
+---
+
+## How lighting works now
+
+The artwork is drawn once, as a clear night. `art/relight.js` remaps each source plane through
+its own three-stop ramp — sky, haze, far/near foliage, ground, wood — and flattens the result to
+one PNG per time of day in `art/frames/`.
+
+This replaced a runtime colour matrix over the single night image. A matrix cannot know that the
+sky wants to go blue while the canopy goes green, so daylight only ever lifted and flattened the
+night scene. Doing it offline, per plane, means each surface is lit on its own terms, and the
+ramps are a handful of numbers you can sit and tune.
+
+Mapping is by **luminance**, normalised within each plane's own range, so every drawn detail
+survives — only the colour changes. The night frame is passed through unmodified, so it is
+exactly the art as drawn.
+
+Two things that had to be handled specially, both found by looking rather than reasoning:
+
+- Stars are painted into the sky *and* haze planes, not just the stars plane. Being the brightest
+  pixels there, they landed on the light end of the ramp and survived as white specks in broad
+  daylight. They are isolated pixels where clouds are broad areas, so an outlier test against
+  opaque neighbours removes them.
+- That outlier test must ignore transparent neighbours. Averaging them as black made every pixel
+  on a sparse plane look like a speck, which would have flattened the haze completely.
+
+```sh
+node art/relight.js && node tools/import-frames.js && node tools/gen-kotlin.js
+```
+
+Edit the ramps at the top of `art/relight.js` to change how any time of day looks. The source
+planes in `art/layers/` stay — they are the input, not dead weight.

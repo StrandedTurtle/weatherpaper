@@ -27,7 +27,8 @@ if [ "$PROMOTE" = yes ]; then
   cp art/scene-v2.aseprite art/scene.aseprite
   rm -f art/layers/*.png
   "$ASEPRITE" -b art/scene.aseprite --split-layers --ignore-empty --save-as 'art/layers/{layer}.png'
-  node tools/import-layers.js
+  node art/relight.js
+node tools/import-frames.js
   node tools/gen-kotlin.js
   node tools/gen-thumb.js
 else

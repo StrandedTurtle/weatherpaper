@@ -30,8 +30,8 @@ rm -f art/layers/*.png
 "$ASEPRITE" -b art/scene.aseprite --split-layers --ignore-empty --save-as 'art/layers/{layer}.png'
 
 echo "==> importing and generating"
-node tools/import-layers.js
-node art/apply-plane-motion.js    # parallax/sway/wind per plane, from scene-meta.json
+node art/relight.js
+node tools/import-frames.js
 node tools/gen-kotlin.js
 node tools/gen-thumb.js
 node tools/make-preview.js        # desktop inspector, art/preview/preview.html
