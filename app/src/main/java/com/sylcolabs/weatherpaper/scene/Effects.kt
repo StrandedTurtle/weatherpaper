@@ -282,7 +282,7 @@ internal object Effects {
                         wind * t * 12f
                     x = ((x % w) + w) % w
                     val y = (hash(i, 17) * h + t * drift) % h
-                    paint.alpha = ((44 + hash(i, 19) * 70f)).roundToInt()
+                    paint.alpha = ((92 + hash(i, 19) * 86f)).roundToInt()
                     block(canvas, b.left + x, b.top + y, unit, unit)
                 }
             }
@@ -375,8 +375,12 @@ internal object Effects {
                 val d2 = nx * nx + ny * ny
                 if (d2 > 1f) continue                       // outside the disc
                 val edge = kotlin.math.sqrt((1f - ny * ny).coerceAtLeast(0f))
-                val terminator = ct * edge
-                val lit = if (waxing) nx > terminator else nx < terminator
+                // Mirroring the x axis for the waning half is not the same as flipping the
+                // comparison, though it looks like it: flipping it makes a waning gibbous come
+                // out as a thin crescent, and leaves the full moon - which lands exactly on the
+                // waxing/waning boundary - drawn as a new one. Written this way both halves of
+                // the month agree at p = 0.5, and it is full there.
+                val lit = (if (waxing) nx else -nx) > ct * edge
                 if (lit) continue
                 block(
                     canvas,

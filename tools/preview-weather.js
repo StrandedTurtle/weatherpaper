@@ -167,6 +167,52 @@ function fog(s, t, amount, wind) {
   }
 }
 
+const MOTE = [0xDC, 0xE4, 0xC8], FIREFLY = [0xE8, 0xD0, 0x60],
+  LEAF_A = [0xC8, 0x7A, 0x34], LEAF_B = [0xA1, 0x55, 0x2A];
+
+/** Mirrors Effects.seasonal. */
+function seasonal(s, t, season, wind, night) {
+  if (season === 'spring') {
+    for (let i = 0; i < 22; i++) {
+      const drift = 5 + hash(i, 3) * 7;
+      let x = hash(i, 11) * W + Math.sin(t / (3 + hash(i, 13) * 4) + i) * 5 * U + wind * t * 12;
+      x = ((x % W) + W) % W;
+      const y = (hash(i, 17) * H + t * drift) % H;
+      s.rect(x, y, U, U, MOTE, Math.round(92 + hash(i, 19) * 86) / 255);
+    }
+  } else if (season === 'summer') {
+    if (night <= 0.05) return;
+    for (let i = 0; i < 16; i++) {
+      const period = 2.6 + hash(i, 23) * 2.8;
+      const pulse = Math.sin((t / period + hash(i, 29)) * 6.283);
+      if (pulse <= 0) continue;
+      const x = ((hash(i, 31) * W + Math.sin(t / (5 + hash(i, 37) * 5) + i) * 7 * U) % W + W) % W;
+      const y = H * (0.62 + hash(i, 41) * 0.30) + Math.sin(t / 3.4 + i * 2) * 3 * U;
+      s.rect(x, y, U, U, FIREFLY, Math.min(210, pulse * pulse * 210 * night) / 255);
+    }
+  } else if (season === 'autumn') {
+    for (let i = 0; i < 20; i++) {
+      const g2 = hash(i, 43);
+      const col = g2 > 0.55 ? LEAF_A : LEAF_B;
+      const fall = 12 + hash(i, 47) * 14;
+      const period = 1.6 + hash(i, 53) * 2.2;
+      const swing = Math.sin(t / period + hash(i, 59) * 6.283);
+      let x = hash(i, 61) * W + swing * 9 * U + wind * t * 26;
+      x = ((x % W) + W) % W;
+      const y = (hash(i, 67) * H + t * fall) % (H + 2 * U);
+      const wide = Math.abs(swing) > 0.55 ? 2 * U : U;
+      s.rect(x, y, wide, U, col, Math.min(225, 120 + hash(i, 71) * 90) / 255);
+    }
+  }
+}
+
+const SEASONS = [
+  { label: 'spring', time: 'morning', season: 'spring', night: 0, t: 6.2 },
+  { label: 'summer night', time: 'night', season: 'summer', night: 1, t: 4.8 },
+  { label: 'autumn', time: 'golden', season: 'autumn', wind: 0.35, t: 5.5 },
+  { label: 'winter', time: 'midday', season: 'winter', cloud: 0.8, night: 0, t: 2.0 },
+];
+
 const CASES = [
   { label: 'clear', time: 'midday', cloud: 0.05, t: 3 },
   { label: 'partly', time: 'midday', cloud: 0.55, t: 3 },
@@ -202,3 +248,24 @@ const file = path.join(ROOT, 'art/preview/weather.png');
 fs.writeFileSync(file, encodePNG(out, OW, OH, 3));
 console.log(CASES.map(c => c.label).join(' | '));
 console.log('wrote ' + path.relative(ROOT, file));
+
+// ---- seasons ----
+const sg = 2, SW = SEASONS.length * (W + sg) + sg, SH = H + sg * 2;
+const sout = new Uint8Array(SW * SH * 3).fill(28);
+SEASONS.forEach((c, i) => {
+  const clearImg = decodePNG(fs.readFileSync(path.join(ROOT, 'art/frames', c.time + '-clear.png')));
+  const overImg = decodePNG(fs.readFileSync(path.join(ROOT, 'art/frames', c.time + '-overcast.png')));
+  const s = Surface(blendCondition(clearImg, overImg, overcastAmount(c.cloud || 0, false)), true);
+  seasonal(s, c.t, c.season, c.wind || 0, c.night || 0);
+  const ox = sg + i * (W + sg);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const si = (y * W + x) * 3, d = ((sg + y) * SW + ox + x) * 3;
+      sout[d] = s.d[si]; sout[d + 1] = s.d[si + 1]; sout[d + 2] = s.d[si + 2];
+    }
+  }
+});
+const sfile = path.join(ROOT, 'art/preview/seasons.png');
+fs.writeFileSync(sfile, encodePNG(sout, SW, SH, 3));
+console.log(SEASONS.map(c => c.label).join(' | '));
+console.log('wrote ' + path.relative(ROOT, sfile));
