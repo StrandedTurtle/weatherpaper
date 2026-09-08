@@ -9,18 +9,23 @@ Draw whatever you want. Then we look at it together and decide what the app shou
 
 ## What the code currently does
 
-Exactly one thing, deliberately: **composites your layers back to front, scales them by a whole
-number so the pixels stay square, and crops to the screen.**
+**The artwork is a grid of finished frames: eight times of day by two sky conditions.** Every
+frame is the whole scene, already lit. The app picks the four surrounding the current time and
+cloud cover and blends between them, scales by a whole number so the pixels stay square, and
+crops to the screen.
 
 - The canvas size comes from your images. Nothing is fixed in code.
-- Colours are yours. There is no palette, no index mapping, no retinting.
-- Layers are still by default. Parallax and drift exist per layer but are set to zero.
+- Colours are yours. The relight moves them; it never invents them, and it never moves geometry.
+- Weather, location, time of day, season and the phase of the moon are all connected to what you
+  see. Nothing computed is left undrawn.
 - The readout (clock, temperature, condition, place) draws on top, home screen only.
-- Weather, location and the time of day are fetched and available, but **nothing yet connects
-  them to the artwork**. That is the interesting decision, and it is deliberately left open
-  until there is real art to look at.
+
+The frames come from `art/layers/` — your nine planes — via `art/relight.js`. The planes are the
+**source**, not something the app ships: they are relit and flattened offline, and only the flat
+frames go in the APK.
 
 ---
+
 
 ## How the current scene is made
 
@@ -194,8 +199,11 @@ Listed so they are not a surprise later, not to be answered now:
   depends entirely on how you have drawn it.
 - **What happens on screens a different shape from your canvas.** Currently: scale to cover,
   centre horizontally, anchor to the bottom. Changeable per-scene in `art/layers.json`.
-- **Rain, snow, fog, stars, sun and moon.** All removed. Whether they come back as drawn art or
-  as generated effects is a decision for after we see the scene.
+- **Rain, snow, fog and lightning.** Generated effects, drawn over the frame — see `Effects.kt`.
+- **Stars and the moon.** Yours, in plane 02. The moon is drawn full there, since one image
+  cannot hold every night of the month; its phase is carved back out at runtime.
+- **Seasons.** Particles rather than art: blossom, fireflies, falling leaves. Four seasons of
+  frames would be sixty-four images and near two megabytes, which is the wrong trade here.
 
 ---
 
@@ -210,11 +218,36 @@ Replace it whenever you like.
 ## How lighting works now
 
 The artwork is drawn once, as a clear night. `art/relight.js` relights each source plane and
-flattens the result to one PNG per time of day in `art/frames/`.
+flattens the result to one PNG per **time of day and sky condition** in `art/frames/`.
 
 This replaced a runtime colour matrix over the single night image. A matrix cannot know that the
 sky wants to go blue while the canopy goes green, so daylight only ever lifted and flattened the
 night scene. Doing it offline, per plane, means each surface is lit on its own terms.
+
+The same argument applies to cloud, one level down, which is why overcast is a real frame and not
+a saturation filter: a filter can dull the picture, but it cannot merge the painted clouds into a
+lid or fill in the shadows, and those are the two things a cloudy day actually does.
+
+### The two axes
+
+**Eight times** — `night`, `firstlight`, `dawn`, `morning`, `midday`, `golden`, `dusk`,
+`twilight`. The two blue hours exist because sunset-to-midnight and midnight-to-sunrise were
+five-hour gaps spanning the fastest-changing light there is. Having them also frees `dawn` and
+`dusk` to be sunrise and sunset — warm and brief — rather than doubling as the dim end of the day.
+
+**Two conditions** — `clear` and `overcast`, the latter written as a modifier on the time tables
+rather than tables of its own. The modifier that matters is ramp *width* (`SPREAD`): with the
+whole sky as the source instead of a point, shadow and highlight both collapse toward the
+midtone. Two things had to be learned by looking:
+
+- An overcast day is **bright and flat, not dim**. Cutting the levels as well as compressing the
+  ramp takes the light away twice and gives a murky dusk. The shaded classes go *up* — light
+  reaches under things that had only shadow before.
+- The sky needs crushing far harder than anything else. Compressed only as much as the foliage,
+  the painted clouds survive and it reads as a *partly* cloudy day.
+
+The app blends across both axes at once, which four ordinary source-over draws hit exactly:
+alphas `1`, `b`, `c(1-b)/(1-cb)` and `cb` leave each frame carrying precisely its own weight.
 
 ### The depth ladder
 
