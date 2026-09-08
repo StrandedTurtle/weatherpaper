@@ -1,14 +1,25 @@
 'use strict';
 // Relights the scene into one flattened image per time of day.
 //
-//   node art/relight.js
+//   node art/relight.js            # writes art/frames/*.png
+//   node art/relight.js --report   # and prints the depth ladder it actually achieved
 //
 // The artwork is drawn as a clear night. Rather than lifting it at runtime with a colour matrix
 // - which flattens it, because a matrix cannot know that sky and foliage want to move in
-// different directions - each depth plane is remapped through its own ramp here, offline, and
-// the result is flattened to a single PNG per time. That keeps every drawn detail (the mapping
-// is by luminance, so structure survives) while letting the sky go blue and the canopy go green
-// independently, and it is hand-tunable in a way a runtime filter is not.
+// different directions - each depth plane is relit here, offline, and the result flattened to a
+// single PNG per time.
+//
+// The thing that makes a forest read as deep is not hue, it is the LUMINANCE LADDER: sky
+// brightest, then the far haze, then mid trunks, with the near trees and the overhanging canopy
+// nearly black against all of it. Get that wrong and the foreground stops being a silhouette and
+// starts looking like fog, which is exactly what the first attempt at this did.
+//
+// So a plane is not given a ramp directly. It is given a TARGET MEDIAN LUMINANCE - its rung on
+// the ladder - plus a tint, and the ramp is built to hit that target: the plane's own median
+// pixel is pinned to the middle stop, darker pixels run down toward the ambient shadow colour
+// and lighter ones up toward the sun colour. The ladder is then legible as a column of numbers
+// you can read down and check, instead of forty hex triples whose brightness you have to
+// evaluate in your head.
 const fs = require('fs');
 const path = require('path');
 const { encodePNG } = require('../tools/png.js');
@@ -18,7 +29,7 @@ const ROOT = path.join(__dirname, '..');
 const SRC = path.join(ROOT, 'art/layers');
 const OUT = path.join(ROOT, 'art/frames');
 
-/** Which ramp each plane is lit by. */
+/** Which rung of the depth ladder each plane sits on. */
 const CLASS_OF = {
   '01-sky': 'sky',
   '02-stars': 'stars',
@@ -27,145 +38,215 @@ const CLASS_OF = {
   '05-ground': 'ground',
   '06-cabin': 'wood',
   '07-near-forest': 'near',
-  '08-foreground': 'near',
+  '08-foreground': 'fore',
   '09-canopy': 'canopy',
 };
 
-/** How visible the stars-and-moon plane is at each time. */
-const STARS = { night: 1, dawn: 0.30, morning: 0, midday: 0, golden: 0, dusk: 0.34 };
+/** Back to front. Also the order the ladder is reported in. */
+const LADDER = ['sky', 'haze', 'far', 'ground', 'wood', 'near', 'fore', 'canopy'];
 
 /**
- * Some stars are painted into the sky plane itself rather than the stars plane, so hiding that
- * plane does not remove them - and being the brightest pixels there, they land on the light end
- * of the sky ramp and survive as white specks in broad daylight.
+ * How wide a ramp each material gets, as multiples of its target median.
  *
- * They are isolated single pixels, where clouds are broad areas, so an outlier against the local
- * neighbourhood identifies them without touching anything else.
+ * This is a property of the MATERIAL, not the hour, so it is stated once. It matters most for
+ * the sky: the artwork is a night sky, near-black at the zenith and glowing at the horizon, and
+ * remapping that structure faithfully gave a midday sky that was navy at the top. A sky is a
+ * smooth field of light rather than a lit object, so it gets a narrow ramp - bright everywhere,
+ * with just enough spread left for the painted clouds to read. Foliage and ground are lit
+ * objects with real shadow, so they get a wide one - though the clearing floor is narrower than
+ * it first looks: half its pixels sit above the median, and letting those climb to twice it
+ * bleached the grass to a pale sage. Sunlit grass is bright, not white.
  */
-function despeckle(img, W, H) {
-  const lum = new Float32Array(W * H);
-  const opaque = new Uint8Array(W * H);
-  for (let i = 0; i < W * H; i++) {
-    opaque[i] = img.rgba[i * 4 + 3] >= 128 ? 1 : 0;
-    lum[i] = 0.213 * img.rgba[i * 4] + 0.715 * img.rgba[i * 4 + 1] + 0.072 * img.rgba[i * 4 + 2];
-  }
-  const out = new Float32Array(lum);
-  for (let y = 1; y < H - 1; y++) {
-    for (let x = 1; x < W - 1; x++) {
-      const i = y * W + x;
-      if (!opaque[i]) continue;
-      // Only opaque neighbours count. Averaging transparent ones as black made every pixel on a
-      // sparse plane look like an outlier, which would have flattened the haze entirely.
-      let sum = 0, n = 0;
-      for (const j of [i - 1, i + 1, i - W, i + W]) {
-        if (opaque[j]) { sum += lum[j]; n++; }
-      }
-      if (n < 3) continue;                      // an edge pixel is not a speck
-      const avg = sum / n;
-      if (lum[i] - avg > 22) out[i] = avg;
-    }
-  }
-  return out;
-}
+const SPREAD = {
+  sky: [0.82, 1.20], haze: [0.78, 1.30], far: [0.55, 1.58], ground: [0.46, 1.52],
+  wood: [0.45, 1.70], near: [0.42, 1.80], fore: [0.40, 1.78], canopy: [0.40, 1.80],
+};
+
+/** How visible the stars-and-moon plane is at each time. */
+const STARS = { night: 1, dawn: 0.34, morning: 0, midday: 0, golden: 0, dusk: 0.38 };
 
 /**
- * Three stops per class - shadow, mid, light. Kept small deliberately: a handful of numbers per
- * time is something you can actually sit and tune, where a full 40-colour table per time is not.
+ * Each entry is [target median luminance, tint]. Read the numbers down the column: they are the
+ * depth ladder, and they must descend from sky to canopy or the scene loses its depth.
+ *
+ * `sun` is what highlights climb toward, `shade` what shadows fall toward - the two are what
+ * make midday feel like midday (warm light, blue shadow) rather than a green picture turned up.
+ * Levels are kept near the night artwork's own so nothing jumps as the day turns over; that
+ * artwork is a bright moonlit clearing, so dawn and dusk are dim in HUE rather than in level.
  */
 const TIMES = {
-  night: null,                       // the artwork as drawn; no remap at all
+  night: null,                       // the artwork exactly as drawn; no remap at all
   dawn: {
-    sky: ['#161C30', '#5A4A6A', '#D89A92'],
-    haze: ['#2A3040', '#565068', '#98868E'],
-    far: ['#1A2430', '#32424A', '#5E7268'],
-    near: ['#141C26', '#2A3638', '#506258'],
-    canopy: ['#0A1016', '#1C2628', '#364638'],
-    ground: ['#1A2228', '#32403C', '#586A58'],
-    wood: ['#1C1A20', '#3A343C', '#665C60'],
+    // Cool and blue-violet, with the sun still under the horizon putting a pink rim on things.
+    sun: '#F0B0A0', shade: '#141A34',
+    sky: [86, '#6E7CA8'], haze: [66, '#6C74A0'], far: [42, '#3A5060'], ground: [66, '#3E5A48'],
+    wood: [36, '#4C4650'], near: [21, '#243040'], fore: [15, '#181E28'], canopy: [17, '#1C2632'],
   },
   morning: {
-    sky: ['#6E92A4', '#A8C6C6', '#E8F2E6'],
-    haze: ['#7E9C9A', '#A4BCB4', '#CEDED4'],
-    far: ['#3E5E52', '#5A7C6A', '#88AC8C'],
-    near: ['#2A4438', '#40604E', '#648870'],
-    canopy: ['#14241C', '#263A2C', '#445C42'],
-    ground: ['#2E4A34', '#486A46', '#729860'],
-    wood: ['#3A3630', '#5A5246', '#887C64'],
+    // Softer and hazier than noon: the haze sits higher against the far trees, contrast lower.
+    sun: '#FFF4E4', shade: '#2C4258',
+    sky: [150, '#93BEDA'], haze: [116, '#A6C0BC'], far: [56, '#4A7C5E'], ground: [90, '#63945E'],
+    wood: [64, '#8A7860'], near: [27, '#33604A'], fore: [16, '#223E2E'], canopy: [20, '#2C4E38'],
   },
   midday: {
-    sky: ['#6094BE', '#9CC2D4', '#E4F0EC'],
-    haze: ['#88A8A4', '#AEC8BE', '#D2E2D6'],
-    far: ['#466E5E', '#5E907A', '#8CC49A'],
-    near: ['#2C4E3C', '#446C50', '#70A074'],
-    canopy: ['#16281E', '#2A4430', '#4A6C4A'],
-    ground: ['#325238', '#50784E', '#7EAE70'],
-    wood: ['#423C34', '#665C4C', '#968870'],
+    // The strongest light of the day: deepest sky, greenest ground, hardest silhouettes.
+    sun: '#FFF9E2', shade: '#20364E',
+    sky: [172, '#74AEE0'], haze: [110, '#8EB4B4'], far: [62, '#4C8656'], ground: [108, '#71A65C'],
+    wood: [78, '#977C5A'], near: [30, '#356A46'], fore: [16, '#22402A'], canopy: [21, '#2E5634'],
   },
   golden: {
-    sky: ['#7A92A6', '#C8B294', '#F8E2AE'],
-    haze: ['#A09A88', '#C4B89C', '#E4D6B4'],
-    far: ['#566044', '#7A8660', '#A6B27E'],
-    near: ['#3A4230', '#5A6644', '#82905E'],
-    canopy: ['#1C2014', '#363C24', '#565C36'],
-    ground: ['#46482C', '#6C6E40', '#98985A'],
-    wood: ['#4E4030', '#786248', '#A28460'],
+    // Only what the low sun actually reaches goes warm. Making every class orange turned the
+    // whole picture into one sepia wash, so the near trees and canopy stay green here - they are
+    // in their own shadow - and the warmth is carried by the sky, the clearing and the cabin.
+    sun: '#FFCE8A', shade: '#2A2E44',
+    sky: [148, '#C2A8B0'], haze: [110, '#CCAE9A'], far: [56, '#5E7A4C'], ground: [92, '#8A9450'],
+    wood: [80, '#A88254'], near: [26, '#3C5434'], fore: [14, '#242C1E'], canopy: [19, '#32421F'],
   },
   dusk: {
-    sky: ['#1A2040', '#6A4660', '#D4867A'],
-    haze: ['#38364C', '#5E5668', '#847880'],
-    far: ['#26303C', '#424C56', '#686E74'],
-    near: ['#181E28', '#2E3640', '#4C5458'],
-    canopy: ['#0C1014', '#1E2428', '#383E42'],
-    ground: ['#20242A', '#3A4042', '#5A625C'],
-    wood: ['#221E24', '#443C40', '#685C5C'],
+    // Dusk is warmer and redder than dawn, and a little darker - otherwise the two ends of the
+    // day are indistinguishable, which is half the point of having both.
+    sun: '#E08870', shade: '#161428',
+    sky: [70, '#9A6C7E'], haze: [54, '#84687A'], far: [32, '#464A58'], ground: [56, '#3E4A44'],
+    wood: [30, '#5A4448'], near: [16, '#2A2E38'], fore: [12, '#1A1A22'], canopy: [14, '#22242C'],
   },
 };
 
 function hex(h) { return [parseInt(h.slice(1, 3), 16), parseInt(h.slice(3, 5), 16), parseInt(h.slice(5, 7), 16)]; }
-function lerp(a, b, t) { return a + (b - a) * t; }
+function lum(c) { return 0.213 * c[0] + 0.715 * c[1] + 0.072 * c[2]; }
+function mix(a, b, t) { return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t]; }
 
-/** Sample a 3-stop ramp at t in 0..1. */
-function ramp(stops, t) {
-  const A = hex(stops[0]), B = hex(stops[1]), C = hex(stops[2]);
-  if (t <= 0.5) {
-    const u = t / 0.5;
-    return [lerp(A[0], B[0], u), lerp(A[1], B[1], u), lerp(A[2], B[2], u)];
+/** Scale a colour to a target luminance, desaturating rather than clipping if it would blow out. */
+function atLuminance(c, target) {
+  const L = Math.max(lum(c), 0.5);
+  let out = [c[0] * target / L, c[1] * target / L, c[2] * target / L];
+  const peak = Math.max(out[0], out[1], out[2]);
+  if (peak > 255) {
+    // Pushing a saturated tint this bright would clip one channel and skew the hue, so bleed it
+    // toward white instead - which is what an over-exposed colour actually does.
+    const room = (255 - target) / Math.max(peak - target, 0.5);
+    out = mix([target, target, target], out, Math.max(0, Math.min(1, room)));
   }
-  const u = (t - 0.5) / 0.5;
-  return [lerp(B[0], C[0], u), lerp(B[1], C[1], u), lerp(B[2], C[2], u)];
+  return out.map(v => Math.max(0, Math.min(255, v)));
+}
+
+/**
+ * Build the three stops for one class: its median pinned to the middle, shadows falling toward
+ * the ambient shade colour and highlights climbing toward the sun.
+ */
+function stopsFor(cls, spec, sun, shade) {
+  const [dm, lm] = SPREAD[cls] || [0.45, 1.9];
+  const tint = hex(spec[1]);
+  const shadeMix = Math.min(0.45, 0.45 * (1 - dm));     // a bright material barely takes ambient
+  const sunMix = Math.min(0.42, 0.42 * (lm - 1) / 0.9);
+  // Tint first, THEN set the brightness. Mixing a stop toward the sun colour after scaling it
+  // also drags its luminance up toward the sun's: blending 40% of a near-white into a canopy
+  // highlight meant for luminance 39 landed it at 123, which is why foliage came out grey and
+  // dusty in daylight rather than dark green. Warm light and cool shade are a change of hue at a
+  // given brightness, not a change of brightness.
+  const mid = atLuminance(tint, spec[0]);
+  const dark = atLuminance(mix(tint, hex(shade), shadeMix), spec[0] * dm);
+  const light = atLuminance(mix(tint, hex(sun), sunMix), Math.min(250, spec[0] * lm));
+  return [dark, mid, light];
+}
+
+/** Sample a 3-stop ramp at u in 0..1. */
+function ramp(stops, u) {
+  return u <= 0.5 ? mix(stops[0], stops[1], u / 0.5) : mix(stops[1], stops[2], (u - 0.5) / 0.5);
+}
+
+/**
+ * At daylit times the sky and haze planes are passed through a 3x3 median filter first.
+ *
+ * Those planes are a NIGHT sky: stars painted directly into them, plus the fine dither of a dark
+ * gradient. Both are isolated single pixels far from their neighbours - salt-and-pepper noise, in
+ * other words - and a median filter is what removes that, exactly and without touching anything
+ * else. An outlier-and-average test was tried first and let stars through, because a star two
+ * pixels across drags its own local average up and hides in it; a median cannot be fooled that
+ * way, since a lone bright pixel is never the middle of its own neighbourhood.
+ *
+ * Cloud edges survive because a median preserves edges by construction - it only ever returns a
+ * value one of the neighbours already had. And a daylit sky wants to be smooth anyway: the fine
+ * texture that reads as depth at night reads as dirt at noon.
+ */
+function smoothSky(img, W, H, passes) {
+  let cur = new Float32Array(W * H);
+  const opaque = new Uint8Array(W * H);
+  for (let i = 0; i < W * H; i++) {
+    opaque[i] = img.rgba[i * 4 + 3] >= 128 ? 1 : 0;
+    cur[i] = lum([img.rgba[i * 4], img.rgba[i * 4 + 1], img.rgba[i * 4 + 2]]);
+  }
+  const win = [];
+  for (let pass = 0; pass < (passes || 2); pass++) {
+    const out = new Float32Array(cur);
+    for (let y = 1; y < H - 1; y++) {
+      for (let x = 1; x < W - 1; x++) {
+        const i = y * W + x;
+        if (!opaque[i]) continue;
+        win.length = 0;
+        for (let dy = -1; dy <= 1; dy++) {
+          for (let dx = -1; dx <= 1; dx++) {
+            const j = i + dy * W + dx;
+            // Transparent neighbours are not black, they are absent; counting them as 0 would
+            // drag the edge of a sparse plane down into shadow.
+            if (opaque[j]) win.push(cur[j]);
+          }
+        }
+        if (win.length < 5) continue;
+        win.sort((a, b) => a - b);
+        out[i] = win[win.length >> 1];
+      }
+    }
+    cur = out;
+  }
+  return cur;
+}
+
+function percentile(sorted, p) {
+  if (!sorted.length) return 0;
+  return sorted[Math.max(0, Math.min(sorted.length - 1, Math.round(p * (sorted.length - 1))))];
 }
 
 const files = fs.readdirSync(SRC).filter(f => f.endsWith('.png')).sort();
 const planes = files.map(f => {
   const name = f.replace(/\.png$/, '');
   const img = decodePNG(fs.readFileSync(path.join(SRC, f)));
-  // Each plane is normalised against its OWN luminance range, so a dark canopy still uses the
-  // full width of its ramp instead of collapsing into the shadow end.
-  let lo = 255, hi = 0;
+  const cls = CLASS_OF[name] || 'near';
+  const dayLum = (cls === 'sky' || cls === 'haze') ? smoothSky(img, img.width, img.height, 2) : null;
+
+  // Bounds come from percentiles, not min/max. One stray bright pixel - and the mid-forest plane
+  // has one, at luminance 189 against a 95th percentile of 68 - would otherwise set the ceiling
+  // and squash the entire plane into the bottom third of its ramp.
+  const vals = [];
   for (let i = 0; i < img.width * img.height; i++) {
     if (img.rgba[i * 4 + 3] < 128) continue;
-    const L = 0.213 * img.rgba[i * 4] + 0.715 * img.rgba[i * 4 + 1] + 0.072 * img.rgba[i * 4 + 2];
-    if (L < lo) lo = L;
-    if (L > hi) hi = L;
+    vals.push(lum([img.rgba[i * 4], img.rgba[i * 4 + 1], img.rgba[i * 4 + 2]]));
   }
-  const cls = CLASS_OF[name] || 'near';
+  vals.sort((a, b) => a - b);
+  const lo = percentile(vals, 0.02);
+  const hi = Math.max(percentile(vals, 0.98), lo + 1);
+  const med = percentile(vals, 0.5);
   return {
-    name: name, cls: cls, img: img, lo: lo, hi: Math.max(hi, lo + 1),
-    // Precomputed once; only the sky needs it, and only on the daylit frames.
-    // Sky and haze are where painted-in stars live; foliage highlights are intended detail.
-    dayLum: (cls === 'sky' || cls === 'haze') ? despeckle(img, img.width, img.height) : null,
+    name, cls, img, lo, hi, dayLum,
+    // Where the median sits in 0..1, so it can be pinned to the ramp's middle stop.
+    tMed: Math.min(0.92, Math.max(0.08, (med - lo) / (hi - lo))),
   };
 });
 
 const W = planes[0].img.width, H = planes[0].img.height;
 fs.mkdirSync(OUT, { recursive: true });
+const report = process.argv.includes('--report');
+const achieved = {};
 
 for (const [time, table] of Object.entries(TIMES)) {
   const out = new Uint8Array(W * H * 3);
+  const seen = {};
   for (const p of planes) {
-    const stops = table ? table[p.cls] : null;
+    const spec = table ? table[p.cls] : null;
     const starAlpha = p.cls === 'stars' ? (STARS[time] !== undefined ? STARS[time] : 1) : 1;
     if (starAlpha <= 0) continue;
+    const stops = spec ? stopsFor(p.cls, spec, table.sun, table.shade) : null;
+    const daylit = STARS[time] === 0;
+    const lums = [];
 
     for (let i = 0; i < W * H; i++) {
       const a = (p.img.rgba[i * 4 + 3] / 255) * starAlpha;
@@ -175,19 +256,31 @@ for (const [time, table] of Object.entries(TIMES)) {
       if (!stops) {
         c = [r, g, b];                                        // night: exactly as drawn
       } else {
-        const daylit = STARS[time] === 0;
-        const L = (p.dayLum && daylit) ? p.dayLum[i]
-          : 0.213 * r + 0.715 * g + 0.072 * b;
+        const L = (p.dayLum && daylit) ? p.dayLum[i] : lum([r, g, b]);
         const t = Math.min(1, Math.max(0, (L - p.lo) / (p.hi - p.lo)));
-        c = ramp(stops, t);
+        // Pin the median to the middle stop, so the plane lands on its rung of the ladder
+        // whatever shape its own histogram happens to be.
+        const u = t <= p.tMed ? 0.5 * (t / p.tMed) : 0.5 + 0.5 * ((t - p.tMed) / (1 - p.tMed));
+        c = ramp(stops, u);
       }
-      for (let k = 0; k < 3; k++) {
-        out[i * 3 + k] = Math.round(out[i * 3 + k] * (1 - a) + c[k] * a);
-      }
+      if (report && a > 0.9) lums.push(lum(c));
+      for (let k = 0; k < 3; k++) out[i * 3 + k] = Math.round(out[i * 3 + k] * (1 - a) + c[k] * a);
+    }
+    if (report && lums.length) {
+      lums.sort((x, y) => x - y);
+      seen[p.cls] = Math.round(percentile(lums, 0.5));
     }
   }
+  achieved[time] = seen;
   fs.writeFileSync(path.join(OUT, time + '.png'), encodePNG(out, W, H, 1));
 }
 
 console.log('relit ' + Object.keys(TIMES).length + ' frames at ' + W + 'x' + H + ' -> art/frames/');
-console.log('planes: ' + planes.map(p => p.name + '(' + p.cls + ')').join(', '));
+if (report) {
+  const times = Object.keys(TIMES);
+  console.log('\nachieved median luminance (must descend down each column):\n');
+  console.log('        ' + times.map(t => t.padStart(8)).join(''));
+  for (const cls of LADDER) {
+    console.log(cls.padEnd(8) + times.map(t => String(achieved[t][cls] ?? '-').padStart(8)).join(''));
+  }
+}

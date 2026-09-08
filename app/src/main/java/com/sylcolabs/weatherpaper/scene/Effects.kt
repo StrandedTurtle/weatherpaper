@@ -26,6 +26,11 @@ internal object Effects {
     }
     private val rect = RectF()
 
+    private const val PI_F = 3.14159265f
+
+    /** Drifting thicker patches in the fog. Each costs a few hundred rects, so this stays small. */
+    private const val BANKS = 9
+
     /** Ordered-dither thresholds. Breaks up alpha plateaus without going per-pixel. */
     private val BAYER = intArrayOf(
         0, 8, 2, 10,
@@ -49,9 +54,14 @@ internal object Effects {
     /**
      * Rain, in three depth layers.
      *
-     * The layering is what stops it looking like a screen door: far drops are short, faint, slow
-     * and thin; near drops are long, bright, fast and thick. Wind slants all three, harder on the
-     * near layer, which reads as depth.
+     * The layering is what stops it looking like a screen door: far drops are short, faint and
+     * slow; near drops are longer, brighter and faster. Wind slants all three, which reads as
+     * depth.
+     *
+     * Rain is drawn MANY and FAINT. Few and bright gives long pale scratches across the picture
+     * rather than weather - the eye reads an individual streak instead of the field of them - so
+     * the streaks are kept short, one artwork pixel thick, and low enough in alpha that no single
+     * one draws attention.
      */
     fun rain(
         canvas: Canvas, b: RectF, unit: Float, timeMs: Long,
@@ -64,17 +74,17 @@ internal object Effects {
 
         for (layer in 0 until 3) {
             val depth = layer / 2f                                  // 0 far .. 1 near
-            val count = ((30 + 90 * intensity) * (0.55f + depth)).roundToInt()
+            val count = ((44 + 150 * intensity) * (0.6f + depth)).roundToInt()
             val speed = (150f + 260f * depth) * (0.65f + 0.6f * intensity)
-            val len = (3f + 6f * depth) * unit
+            val len = (2f + 3.5f * depth) * unit
             // The streak is drawn ALONG its travel, so wind tilts the drop itself. Drifting a
             // vertical bar sideways just makes upright rain that slides, which is what it looked
             // like before.
-            val slant = wind * len * 1.35f
-            paint.strokeWidth = if (layer == 2) 2f * unit else unit
+            val slant = wind * len * 1.1f
+            paint.strokeWidth = unit                                // never thicker than a pixel
             paint.strokeCap = Paint.Cap.BUTT
             paint.color = tint
-            paint.alpha = ((34 + 78 * depth) * (0.5f + 0.5f * intensity)).roundToInt().coerceIn(14, 200)
+            paint.alpha = ((20 + 46 * depth) * (0.55f + 0.45f * intensity)).roundToInt().coerceIn(10, 132)
 
             for (i in 0 until count) {
                 val seed = layer * 977 + i
@@ -92,8 +102,8 @@ internal object Effects {
         paint.strokeWidth = 0f
 
         // Rings where drops land on the water, low in the frame only.
-        paint.alpha = (58 * intensity).roundToInt().coerceIn(0, 110)
-        val splashes = (10 * intensity).roundToInt()
+        paint.alpha = (44 * intensity).roundToInt().coerceIn(0, 84)
+        val splashes = (12 * intensity).roundToInt()
         for (i in 0 until splashes) {
             val phase = (t / 0.5f + hash(i, 61)) % 1f
             if (phase > 0.30f) continue
@@ -117,13 +127,14 @@ internal object Effects {
         val t = timeMs / 1000f
         val w = b.width()
         val h = b.height()
-        val count = (46 + 150 * intensity).roundToInt()
+        val count = (110 + 300 * intensity).roundToInt()
 
         paint.color = tint
         for (i in 0 until count) {
             val g = hash(i, 7)
-            val size = if (g > 0.88f) 3f * unit else if (g > 0.60f) 2f * unit else unit
-            val depth = size / (3f * unit)
+            // Two sizes, not three. A three-pixel flake is a visible white square at this scale.
+            val size = if (g > 0.72f) 2f * unit else unit
+            val depth = if (g > 0.72f) 1f else 0.45f
             val fall = (14f + 26f * depth) * (0.7f + 0.6f * intensity)
             val sway = (2f + hash(i, 17) * 6f) * unit
             val period = 2.2f + hash(i, 29) * 3.4f
@@ -134,16 +145,22 @@ internal object Effects {
                 wind * t * 22f * depth
             x = ((x % w) + w) % w
 
-            paint.alpha = ((110 + 110 * depth) * (0.55f + 0.45f * intensity)).roundToInt().coerceIn(40, 235)
+            paint.alpha = ((44 + 96 * depth) * (0.55f + 0.45f * intensity)).roundToInt().coerceIn(22, 168)
             block(canvas, b.left + x, b.top + y, size, size)
         }
     }
 
     /**
-     * Fog: stepped horizontal bands that thicken toward the viewer and drift sideways.
+     * Fog: a soft vertical haze with drifting banks over it.
      *
-     * Alpha is quantised to a few levels rather than being a smooth gradient - a continuous
-     * wash would read as a photo filter laid over pixel art.
+     * The haze is a CONTINUOUS gradient. Quantising it to a handful of alpha levels was an
+     * attempt to keep it looking hand-drawn, and it did the opposite: each level change landed on
+     * a row boundary and drew a hard full-width edge, so the fog arrived as a stack of grey
+     * rectangles across the picture. Nothing in a smooth vertical gradient reads as a photo
+     * filter; a staircase of them does.
+     *
+     * The pixel-art character is carried by the banks instead, which are dithered - they are the
+     * part with structure, and structure is what can afford to be stepped.
      */
     fun fog(
         canvas: Canvas, b: RectF, unit: Float, timeMs: Long,
@@ -153,7 +170,6 @@ internal object Effects {
         val t = timeMs / 1000f
         val h = b.height()
         val w = b.width()
-        val band = (unit * 2f).coerceAtLeast(2f)
         paint.color = tint
 
         /**
@@ -169,49 +185,57 @@ internal object Effects {
             return d * d
         }
 
-        // 1. Base haze: smooth vertically, quantised to a few steps so it still reads as pixel art.
-        var y = b.top + h * 0.18f
+        // 1. Base haze, one artwork pixel per row and no quantisation, so consecutive rows differ
+        //    by less than one step of alpha and no edge is ever visible.
+        var y = b.top + h * 0.16f
         while (y < b.bottom) {
-            val a = amount * density(y) * 0.44f
-            val stepped = (a * 6f).roundToInt() / 6f
-            if (stepped > 0f) {
-                paint.alpha = (stepped * 255f).roundToInt().coerceIn(0, 120)
-                canvas.drawRect(b.left, y, b.right, y + band, paint)
+            val a = amount * density(y) * 0.46f
+            if (a > 0.002f) {
+                paint.alpha = (a * 255f).roundToInt().coerceIn(0, 116)
+                canvas.drawRect(b.left, y, b.right, y + unit, paint)
             }
-            y += band
+            y += unit
         }
 
-        // 2. Wisps, as soft elliptical patches. Tapering only along their length left them as
-        //    flat 2px bars with hard ends; they need to fade vertically as well to read as fog.
-        val wisps = 8
-        for (i in 0 until wisps) {
-            val wy = b.top + h * (0.32f + hash(i, 13) * 0.48f) + sin(t * 0.22f + i) * h * 0.012f
-            val d = density(wy)
+        // 2. Banks: broad, slow, dithered patches that give the fog somewhere to be thicker.
+        //    Cells are two pixels square, which keeps the rect count in the low thousands while
+        //    staying coarse enough to read as dither rather than as a gradient.
+        val cell = unit * 2f
+        for (i in 0 until BANKS) {
+            val by = b.top + h * (0.30f + hash(i, 13) * 0.50f) + sin(t * 0.19f + i) * h * 0.014f
+            val d = density(by)
             if (d <= 0.02f) continue
-            val span = w * (0.30f + hash(i, 17) * 0.5f)
-            val tall = band * (3f + hash(i, 31) * 4f)
-            val speed = (5f + wind * 30f) * (0.5f + hash(i, 19))
+            val span = w * (0.34f + hash(i, 17) * 0.56f)
+            val tall = cell * (3f + hash(i, 31) * 4f)
+            val speed = (4f + wind * 26f) * (0.5f + hash(i, 19))
             var x = (hash(i, 23) * (w + span) + t * speed) % (w + span) - span
-            val peakA = amount * d * (0.10f + hash(i, 29) * 0.12f)
-            val cols = (span / unit).toInt().coerceAtLeast(1)
-            val rows = (tall / band).toInt().coerceAtLeast(1)
+            val peakA = amount * d * (0.09f + hash(i, 29) * 0.11f)
+            val cols = (span / cell).toInt().coerceAtLeast(1)
+            val rows = (tall / cell).toInt().coerceAtLeast(1)
 
             for (c in 0 until cols) {
-                val hu = sin((c / cols.toFloat()) * 3.14159f)
+                val hu = sin((c / cols.toFloat()) * PI_F)
                 if (hu <= 0.02f) continue
-                val px = b.left + x + c * unit
-                if (px < b.left - unit || px > b.right) continue
+                val px = b.left + x + c * cell
+                if (px < b.left - cell || px > b.right) continue
                 for (rIdx in 0 until rows) {
-                    val vu = sin(((rIdx + 0.5f) / rows) * 3.14159f)
+                    val vu = sin(((rIdx + 0.5f) / rows) * PI_F)
                     val a = peakA * hu * hu * vu
+                    // Below this there is no fog here, and dithering nothing still draws
+                    // something: a fixed bias rounds half the cells up to the lowest level and
+                    // lays a checkerboard line along the faint top edge of every bank.
+                    if (a < 0.014f) continue
                     // Dither before quantising: snapping straight to levels turned the taper
-                    // into flat plateaus with hard edges, which read as rectangles of fog.
-                    val bias = (BAYER[(rIdx and 3) * 4 + (c and 3)] / 16f - 0.5f) * (1f / 8f)
+                    // into flat plateaus with hard edges, which read as rectangles of fog. The
+                    // bias fades out with the alpha it is dithering, so it can never invent
+                    // texture where the fog itself has none.
+                    val bias = (BAYER[(rIdx and 3) * 4 + (c and 3)] / 16f - 0.5f) *
+                        (1f / 8f) * (a / 0.10f).coerceAtMost(1f)
                     val stepped = ((a + bias) * 8f).roundToInt() / 8f
                     if (stepped <= 0f) continue
-                    paint.alpha = (stepped * 255f).roundToInt().coerceIn(0, 120)
-                    val py = wy + rIdx * band
-                    canvas.drawRect(px, py, px + unit, py + band, paint)
+                    paint.alpha = (stepped * 255f).roundToInt().coerceIn(0, 110)
+                    val py = by + rIdx * cell
+                    canvas.drawRect(px, py, px + cell, py + cell, paint)
                 }
             }
         }

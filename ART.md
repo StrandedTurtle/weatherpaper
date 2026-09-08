@@ -209,31 +209,54 @@ Replace it whenever you like.
 
 ## How lighting works now
 
-The artwork is drawn once, as a clear night. `art/relight.js` remaps each source plane through
-its own three-stop ramp — sky, haze, far/near foliage, ground, wood — and flattens the result to
-one PNG per time of day in `art/frames/`.
+The artwork is drawn once, as a clear night. `art/relight.js` relights each source plane and
+flattens the result to one PNG per time of day in `art/frames/`.
 
 This replaced a runtime colour matrix over the single night image. A matrix cannot know that the
 sky wants to go blue while the canopy goes green, so daylight only ever lifted and flattened the
-night scene. Doing it offline, per plane, means each surface is lit on its own terms, and the
-ramps are a handful of numbers you can sit and tune.
+night scene. Doing it offline, per plane, means each surface is lit on its own terms.
 
-Mapping is by **luminance**, normalised within each plane's own range, so every drawn detail
-survives — only the colour changes. The night frame is passed through unmodified, so it is
-exactly the art as drawn.
+### The depth ladder
 
-Two things that had to be handled specially, both found by looking rather than reasoning:
+What makes a forest read as deep is not hue, it is **luminance order**: sky brightest, then the
+far haze, then mid trunks, with the near trees and the overhanging canopy nearly black against
+all of it. So a plane is not given colours directly. It is given a **target median luminance** —
+its rung on the ladder — plus a tint, and the ramp is built to hit that target: the plane's own
+median pixel is pinned to the middle stop, darker pixels run down toward the ambient shade colour
+and lighter ones climb toward the sun colour.
 
-- Stars are painted into the sky *and* haze planes, not just the stars plane. Being the brightest
-  pixels there, they landed on the light end of the ramp and survived as white specks in broad
-  daylight. They are isolated pixels where clouds are broad areas, so an outlier test against
-  opaque neighbours removes them.
-- That outlier test must ignore transparent neighbours. Averaging them as black made every pixel
-  on a sparse plane look like a speck, which would have flattened the haze completely.
+```sh
+node art/relight.js --report      # prints the ladder each frame actually achieved
+```
+
+Read that report down each column. It must descend, or the foreground stops being a silhouette
+and starts looking like fog.
+
+Mapping is by luminance, so every drawn detail survives and only the colour changes. Bounds come
+from the 2nd and 98th percentiles rather than min/max — one stray bright pixel in the mid-forest
+plane would otherwise set the ceiling and squash the whole plane into the bottom of its ramp. The
+night frame is passed through unmodified, so it is exactly the art as drawn.
+
+Three things that had to be handled specially, all found by looking rather than reasoning:
+
+- **Warm light is a change of hue, not of brightness.** Mixing a stop toward the sun colour after
+  setting its level also drags its luminance up toward the sun's — a canopy highlight meant for
+  luminance 39 landed at 123, which turned daylit foliage grey and dusty. Tint first, set the
+  brightness second.
+- **A sky is not a lit object.** Ramp width is per material (`SPREAD`): foliage and ground have
+  real shadow and get a wide ramp, but the sky is a smooth field of light and gets a narrow one.
+  Remapping the night sky's own structure faithfully — near-black at the zenith — gave a midday
+  sky that was navy at the top.
+- **Stars are painted into the sky and haze planes**, not just the stars plane, and survive into
+  daylight as white specks. At daylit times those planes go through a 3×3 **median filter**,
+  which is what removes salt-and-pepper noise exactly; an outlier-and-average test was tried
+  first and let stars through, because a star two pixels across drags its own local average up
+  and hides in it.
 
 ```sh
 node art/relight.js && node tools/import-frames.js && node tools/gen-kotlin.js
 ```
 
-Edit the ramps at the top of `art/relight.js` to change how any time of day looks. The source
-planes in `art/layers/` stay — they are the input, not dead weight.
+Edit the `TIMES` table at the top of `art/relight.js` to change how any time of day looks: each
+entry is `[target luminance, tint]`, plus a `sun` and `shade` for the frame. The source planes in
+`art/layers/` stay — they are the input, not dead weight.

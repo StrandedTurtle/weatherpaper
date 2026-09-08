@@ -67,12 +67,12 @@ function rain(s, t, intensity, wind) {
   if (intensity <= 0) return;
   for (let layer = 0; layer < 3; layer++) {
     const depth = layer / 2;
-    const count = Math.round((30 + 90 * intensity) * (0.55 + depth));
+    const count = Math.round((44 + 150 * intensity) * (0.6 + depth));
     const speed = (150 + 260 * depth) * (0.65 + 0.6 * intensity);
-    const len = (3 + 6 * depth) * U;
-    const thick = layer === 2 ? 2 * U : U;
-    const slant = wind * len * 1.35;
-    const alpha = Math.min(200, Math.max(14, (34 + 78 * depth) * (0.5 + 0.5 * intensity))) / 255;
+    const len = (2 + 3.5 * depth) * U;
+    const thick = U;
+    const slant = wind * len * 1.1;
+    const alpha = Math.min(132, Math.max(10, (20 + 46 * depth) * (0.55 + 0.45 * intensity))) / 255;
     for (let i = 0; i < count; i++) {
       const seed = layer * 977 + i;
       const vr = 0.75 + hash(seed, 23) * 0.5;
@@ -82,8 +82,8 @@ function rain(s, t, intensity, wind) {
       line(s, x, y, x - slant, y - len, thick, RAIN, alpha);
     }
   }
-  const splashes = Math.round(10 * intensity);
-  const sa = Math.min(110, 58 * intensity) / 255;
+  const splashes = Math.round(12 * intensity);
+  const sa = Math.min(84, 44 * intensity) / 255;
   for (let i = 0; i < splashes; i++) {
     const phase = (t / 0.5 + hash(i, 61)) % 1;
     if (phase > 0.30) continue;
@@ -95,59 +95,61 @@ function rain(s, t, intensity, wind) {
 }
 
 function snow(s, t, intensity, wind) {
-  const count = Math.round(46 + 150 * intensity);
+  const count = Math.round(110 + 300 * intensity);
   for (let i = 0; i < count; i++) {
     const g2 = hash(i, 7);
-    const size = g2 > 0.88 ? 3 * U : g2 > 0.60 ? 2 * U : U;
-    const depth = size / (3 * U);
+    const size = g2 > 0.72 ? 2 * U : U;
+    const depth = g2 > 0.72 ? 1 : 0.45;
     const fall = (14 + 26 * depth) * (0.7 + 0.6 * intensity);
     const sway = (2 + hash(i, 17) * 6) * U;
     const period = 2.2 + hash(i, 29) * 3.4;
     const y = (hash(i, 37) * H + t * fall) % (H + size);
     let x = hash(i, 43) * W + Math.sin(t / period + hash(i, 53) * 6.283) * sway + wind * t * 22 * depth;
     x = ((x % W) + W) % W;
-    const a = Math.min(235, Math.max(40, (110 + 110 * depth) * (0.55 + 0.45 * intensity))) / 255;
+    const a = Math.min(168, Math.max(22, (44 + 96 * depth) * (0.55 + 0.45 * intensity))) / 255;
     s.rect(x, y, size, size, SNOW, a);
   }
 }
 
 function fog(s, t, amount, wind) {
   if (amount <= 0.02) return;
-  const band = Math.max(2, U * 2);
   function density(y) {
     const f = Math.min(1, Math.max(0, y / H));
     const peak = 0.56, spread = f < peak ? 0.30 : 0.46;
     const d = 1 - Math.min(1, Math.abs(f - peak) / spread);
     return d * d;
   }
-  let y = H * 0.18;
-  while (y < H) {
-    const a = amount * density(y) * 0.44;
-    const stepped = Math.round(a * 6) / 6;
-    if (stepped > 0) s.rect(0, y, W, band, FOG, Math.min(120, stepped * 255) / 255);
-    y += band;
+  // Base haze: one pixel per row, continuous alpha, no quantisation.
+  for (let y = Math.round(H * 0.16); y < H; y += U) {
+    const a = amount * density(y) * 0.46;
+    if (a > 0.002) s.rect(0, y, W, U, FOG, Math.min(116, a * 255) / 255);
   }
-  for (let i = 0; i < 8; i++) {
-    const wy = H * (0.32 + hash(i, 13) * 0.48) + Math.sin(t * 0.22 + i) * H * 0.012;
-    const d = density(wy);
+  // Banks, dithered on a two-pixel cell.
+  const cell = U * 2;
+  for (let i = 0; i < 9; i++) {
+    const by = H * (0.30 + hash(i, 13) * 0.50) + Math.sin(t * 0.19 + i) * H * 0.014;
+    const d = density(by);
     if (d <= 0.02) continue;
-    const span = W * (0.30 + hash(i, 17) * 0.5);
-    const tall = band * (3 + hash(i, 31) * 4);
-    const speed = (5 + wind * 30) * (0.5 + hash(i, 19));
+    const span = W * (0.34 + hash(i, 17) * 0.56);
+    const tall = cell * (3 + hash(i, 31) * 4);
+    const speed = (4 + wind * 26) * (0.5 + hash(i, 19));
     const x = (hash(i, 23) * (W + span) + t * speed) % (W + span) - span;
-    const peakA = amount * d * (0.10 + hash(i, 29) * 0.12);
-    const cols = Math.max(1, Math.round(span / U));
-    const rows = Math.max(1, Math.round(tall / band));
+    const peakA = amount * d * (0.09 + hash(i, 29) * 0.11);
+    const cols = Math.max(1, Math.round(span / cell));
+    const rows = Math.max(1, Math.round(tall / cell));
     for (let c = 0; c < cols; c++) {
       const hu = Math.sin((c / cols) * Math.PI);
       if (hu <= 0.02) continue;
-      for (let r2 = 0; r2 < rows; r2++) {
-        const vu = Math.sin(((r2 + 0.5) / rows) * Math.PI);
+      const px = x + c * cell;
+      if (px < -cell || px > W) continue;
+      for (let r = 0; r < rows; r++) {
+        const vu = Math.sin(((r + 0.5) / rows) * Math.PI);
         const a = peakA * hu * hu * vu;
-        const bias = (BAYER[(r2 & 3) * 4 + (c & 3)] / 16 - 0.5) * (1 / 8);
+        if (a < 0.014) continue;
+        const bias = (BAYER[(r & 3) * 4 + (c & 3)] / 16 - 0.5) * (1 / 8) * Math.min(1, a / 0.10);
         const stepped = Math.round((a + bias) * 8) / 8;
         if (stepped <= 0) continue;
-        s.rect(x + c * U, wy + r2 * band, U, band, FOG, Math.min(120, stepped * 255) / 255);
+        s.rect(px, by + r * cell, cell, cell, FOG, Math.min(110, stepped * 255) / 255);
       }
     }
   }
