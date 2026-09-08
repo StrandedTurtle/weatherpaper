@@ -58,8 +58,26 @@ const LADDER = ['sky', 'haze', 'far', 'ground', 'wood', 'near', 'fore', 'canopy'
  * bleached the grass to a pale sage. Sunlit grass is bright, not white.
  */
 const SPREAD = {
-  sky: [0.82, 1.20], haze: [0.78, 1.30], far: [0.55, 1.58], ground: [0.46, 1.52],
+  sky: [0.82, 1.20], haze: [0.78, 1.30], far: [0.55, 1.58], ground: [0.46, 1.22],
   wood: [0.45, 1.70], near: [0.42, 1.80], fore: [0.40, 1.78], canopy: [0.40, 1.80],
+};
+
+/**
+ * The least luminance a class may span below and above its median, in absolute terms.
+ *
+ * SPREAD alone is a MULTIPLE of the target, which quietly ties detail to brightness: the darker
+ * a class sits on the ladder, the narrower its ramp becomes, and the near trees and canopy - the
+ * darkest rungs and the ones carrying the most drawn texture - lost most of theirs. Measured, the
+ * canopy kept 31% of its source contrast at midday and the foreground 58%, while the clearing
+ * floor, already the widest, gained a further 2x. That is backwards.
+ *
+ * Brightness and contrast are independent. A dark tree in daylight is dark AND fully detailed:
+ * near-black in the mass of it, with rim-lit edges far brighter than its own median. Pinning the
+ * median holds the silhouette; the floor below keeps the texture inside it. The night artwork is
+ * the proof - its canopy sits at luminance 27 and still spans to 100.
+ */
+const SPAN_FLOOR = {
+  far: [9, 24], wood: [12, 32], near: [11, 40], fore: [9, 30], canopy: [15, 80],
 };
 
 /** How visible the stars-and-moon plane is at each time. */
@@ -227,9 +245,21 @@ function stopsFor(cls, spec, sun, shade, cond) {
   // highlight meant for luminance 39 landed it at 123, which is why foliage came out grey and
   // dusty in daylight rather than dark green. Warm light and cool shade are a change of hue at a
   // given brightness, not a change of brightness.
+  // Span, as a distance from the median rather than a multiple of it, so a dark class is not
+  // punished for being dark. The floor is eased under cloud but never removed: overcast flattens
+  // a scene, it does not erase what is drawn in it.
+  const floor = SPAN_FLOOR[cls];
+  const ease = 0.45 + 0.55 * sp;
+  let below = target * (1 - dm);
+  let above = target * (lm - 1);
+  if (floor) {
+    below = Math.max(below, floor[0] * ease);
+    above = Math.max(above, floor[1] * ease);
+  }
+
   const mid = atLuminance(tint, target);
-  const dark = atLuminance(mix(tint, hex(shade), shadeMix), target * dm);
-  const light = atLuminance(mix(tint, hex(sun), sunMix), Math.min(250, target * lm));
+  const dark = atLuminance(mix(tint, hex(shade), shadeMix), Math.max(1.5, target - below));
+  const light = atLuminance(mix(tint, hex(sun), sunMix), Math.min(250, target + above));
   return [dark, mid, light];
 }
 
@@ -293,6 +323,9 @@ function percentile(sorted, p) {
   return sorted[Math.max(0, Math.min(sorted.length - 1, Math.round(p * (sorted.length - 1))))];
 }
 
+const report = process.argv.includes('--report');
+const contrast = process.argv.includes('--contrast');
+
 const files = fs.readdirSync(SRC).filter(f => f.endsWith('.png')).sort();
 const planes = files.map(f => {
   const name = f.replace(/\.png$/, '');
@@ -319,9 +352,34 @@ const planes = files.map(f => {
   };
 });
 
+/** Interquartile range - how much luminance spread a set of pixels has. Detail, numerically. */
+function iqr(vals) {
+  if (vals.length < 4) return 0;
+  const v = vals.slice().sort((a, b) => a - b);
+  const q = f => v[Math.round(f * (v.length - 1))];
+  return q(0.75) - q(0.25);
+}
+
+// Where each class is fully opaque, so its contrast can be read back off the flattened frame.
+const OPAQUE = {};
+const SOURCE_IQR = {};
+if (contrast) {
+  for (const p of planes) {
+    if (p.cls === 'stars') continue;
+    const idx = [], src = [];
+    for (let i = 0; i < planes[0].img.width * planes[0].img.height; i++) {
+      if (p.img.rgba[i * 4 + 3] < 250) continue;
+      idx.push(i);
+      src.push(lum([p.img.rgba[i * 4], p.img.rgba[i * 4 + 1], p.img.rgba[i * 4 + 2]]));
+    }
+    OPAQUE[p.cls] = idx;
+    SOURCE_IQR[p.cls] = iqr(src);
+  }
+}
+const measured = {};
+
 const W = planes[0].img.width, H = planes[0].img.height;
 fs.mkdirSync(OUT, { recursive: true });
-const report = process.argv.includes('--report');
 const achieved = {};
 
 for (const [time, table] of Object.entries(TIMES)) {
@@ -367,6 +425,15 @@ for (const [time, table] of Object.entries(TIMES)) {
       }
     }
     achieved[time + '/' + condName] = seen;
+    if (contrast) {
+      const per = {};
+      for (const cls of LADDER) {
+        const idx = OPAQUE[cls];
+        if (!idx) continue;
+        per[cls] = iqr(idx.map(i => lum([out[i * 3], out[i * 3 + 1], out[i * 3 + 2]])));
+      }
+      measured[time + '/' + condName] = per;
+    }
     fs.writeFileSync(path.join(OUT, time + '-' + condName + '.png'), encodePNG(out, W, H, 1));
   }
 }
@@ -382,6 +449,21 @@ if (report) {
     for (const cls of LADDER) {
       console.log(cls.padEnd(8) + cols.map(t =>
         String(achieved[t + '/' + condName][cls] ?? '-').padStart(8)).join(''));
+    }
+  }
+}
+if (contrast) {
+  // Detail, as the interquartile range of each class's luminance. Compare every column against
+  // `source`: far below it means the class is being flattened, far above it over-sharpened. The
+  // front planes are the ones to trust - a class drawn over by later ones reads partly occluded.
+  const cols = Object.keys(TIMES);
+  for (const condName of Object.keys(CONDITIONS)) {
+    console.log('\n' + condName + ' - luminance IQR (detail); compare each column to source:\n');
+    console.log('        ' + 'source'.padStart(8) + cols.map(t => t.slice(0, 7).padStart(8)).join(''));
+    for (const cls of LADDER) {
+      if (SOURCE_IQR[cls] === undefined) continue;
+      console.log(cls.padEnd(8) + SOURCE_IQR[cls].toFixed(1).padStart(8) +
+        cols.map(t => (measured[t + '/' + condName][cls] ?? 0).toFixed(1).padStart(8)).join(''));
     }
   }
 }

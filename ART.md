@@ -265,6 +265,26 @@ node art/relight.js --report      # prints the ladder each frame actually achiev
 Read that report down each column. It must descend, or the foreground stops being a silhouette
 and starts looking like fog.
 
+### Brightness and contrast are separate
+
+A class's ramp width was originally a *multiple* of its target, which quietly tied detail to
+brightness: the darker a class sat on the ladder, the narrower its ramp became. The near trees and
+the canopy are the darkest rungs and carry the most drawn texture, and they lost most of it —
+measured, the canopy kept **31%** of its source contrast at midday and the foreground 58%, while
+the clearing floor, already the widest, *gained* a further 2×.
+
+`SPAN_FLOOR` fixes that with a minimum absolute distance either side of the median. A dark tree in
+daylight is dark *and* fully detailed: near-black through the mass of it, with rim-lit edges far
+brighter than its own median. Pinning the median holds the silhouette; the floor keeps the texture
+inside it. The night artwork is the proof — its canopy sits at luminance 27 and still spans to 100.
+
+```sh
+node art/relight.js --contrast     # IQR per class, source vs each frame
+```
+
+Read that against the source column. A class far below its source figure is being flattened; far
+above it is being over-sharpened.
+
 Mapping is by luminance, so every drawn detail survives and only the colour changes. Bounds come
 from the 2nd and 98th percentiles rather than min/max — one stray bright pixel in the mid-forest
 plane would otherwise set the ceiling and squash the whole plane into the bottom of its ramp. The
