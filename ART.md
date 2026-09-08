@@ -217,99 +217,77 @@ Replace it whenever you like.
 
 ## How lighting works now
 
-The artwork is drawn once, as a clear night. `art/relight.js` relights each source plane and
-flattens the result to one PNG per **time of day and sky condition** in `art/frames/`.
+The artwork is drawn once, as a clear night. `art/relight.js` relights it into one PNG per **time
+of day and sky condition** in `art/frames/`, offline. A runtime colour matrix cannot know the sky
+wants to go blue while the canopy goes green, so daylight only ever lifted and flattened the night
+scene. The same argument applies to cloud one level down, which is why overcast is a real frame and
+not a saturation filter.
 
-This replaced a runtime colour matrix over the single night image. A matrix cannot know that the
-sky wants to go blue while the canopy goes green, so daylight only ever lifted and flattened the
-night scene. Doing it offline, per plane, means each surface is lit on its own terms.
+### Lighting is by material, not by plane
 
-The same argument applies to cloud, one level down, which is why overcast is a real frame and not
-a saturation filter: a filter can dull the picture, but it cannot merge the painted clouds into a
-lid or fill in the shadows, and those are the two things a cloudy day actually does.
+`art/segment.js` decides **what each pixel is** — sky, mist, foliage, grass, wood, stone — and the
+relight lights it as that.
 
-### The two axes
+This replaced lighting by plane, and it had to. The planes in `art/layers/` are horizontal *bands*:
+`09-canopy` is rows 0–71, `07-near-forest` 33–225, `08-foreground` 226–287. A tree runs through all
+three. Because each plane was also normalised against its own luminance range, identical bark
+either side of an arbitrary row got a different map — traced down column x=14, a source that was
+continuous (luminance 20 → 19) came out as **31 → 13**. That step was the unnatural edge, and
+nothing in the picture is there.
 
-**Eight times** — `night`, `firstlight`, `dawn`, `morning`, `midday`, `golden`, `dusk`,
-`twilight`. The two blue hours exist because sunset-to-midnight and midnight-to-sunrise were
-five-hour gaps spanning the fastest-changing light there is. Having them also frees `dawn` and
-`dusk` to be sunrise and sunset — warm and brief — rather than doubling as the dim end of the day.
-
-**Two conditions** — `clear` and `overcast`, the latter written as a modifier on the time tables
-rather than tables of its own. The modifier that matters is ramp *width* (`SPREAD`): with the
-whole sky as the source instead of a point, shadow and highlight both collapse toward the
-midtone. Two things had to be learned by looking:
-
-- An overcast day is **bright and flat, not dim**. Cutting the levels as well as compressing the
-  ramp takes the light away twice and gives a murky dusk. The shaded classes go *up* — light
-  reaches under things that had only shadow before.
-- The sky needs crushing far harder than anything else. Compressed only as much as the foliage,
-  the painted clouds survive and it reads as a *partly* cloudy day.
-
-The app blends across both axes at once, which four ordinary source-over draws hit exactly:
-alphas `1`, `b`, `c(1-b)/(1-cb)` and `cb` leave each frame carrying precisely its own weight.
-
-### The depth ladder
-
-What makes a forest read as deep is not hue, it is **luminance order**: sky brightest, then the
-far haze, then mid trunks, with the near trees and the overhanging canopy nearly black against
-all of it. So a plane is not given colours directly. It is given a **target median luminance** —
-its rung on the ladder — plus a tint, and the ramp is built to hit that target: the plane's own
-median pixel is pinned to the middle stop, darker pixels run down toward the ambient shade colour
-and lighter ones climb toward the sun colour.
+Classification is tractable because the artwork is k-means indexed to exactly **40 colours**: 40
+decisions, not 46,080, and every boundary pixel-exact by definition. Two ambiguities colour cannot
+settle are settled spatially — open sky is separated from the inside of a tree by a flood fill from
+the top edge (open sky is 81% pure black; trunks never get below luminance 8), and shadow is not
+treated as a material at all but filled from whatever surrounds it, so shadow inside a tree is that
+tree.
 
 ```sh
-node art/relight.js --report      # prints the ladder each frame actually achieved
+node art/segment.js          # writes art/materials.json + art/materials.png
 ```
 
-Read that report down each column. It must descend, or the foreground stops being a silhouette
-and starts looking like fog.
+`art/materials.png` is a false-colour render — look at it. `art/materials.json` lists all 40
+palette entries and is hand-editable: set `material` on an entry to overrule the rules, and
+re-running keeps your edits.
 
-### Brightness and contrast are separate
+### Materials change hue; the source decides brightness
 
-A class's ramp width was originally a *multiple* of its target, which quietly tied detail to
-brightness: the darker a class sat on the ladder, the narrower its ramp became. The near trees and
-the canopy are the darkest rungs and carry the most drawn texture, and they lost most of it —
-measured, the canopy kept **31%** of its source contrast at midday and the foreground 58%, while
-the clearing floor, already the widest, *gained* a further 2×.
+There is **one tone curve for the whole picture** per frame (`TONE`), not one per material. Giving
+each material its own level meant two adjacent pixels of identical paint — both pure black, say —
+could land at 17 and 67 depending on which side of a boundary they fell. Materials now carry a
+tint and a level trim of at most ~5%, and that bound is load-bearing: it is the only thing left
+that can put a step at a boundary, and it caps that step at 1.1×.
 
-`SPAN_FLOOR` fixes that with a minimum absolute distance either side of the median. A dark tree in
-daylight is dark *and* fully detailed: near-black through the mass of it, with rim-lit edges far
-brighter than its own median. Pinning the median holds the silhouette; the floor keeps the texture
-inside it. The night artwork is the proof — its canopy sits at luminance 27 and still spans to 100.
+The depth ladder survives without being imposed. The artwork already contains it — the source
+medians run foliage 24, mist 47, grass 66 — and a monotone curve cannot reorder them. Imposing a
+ladder on top is what produced the banding in the first place.
+
+### The sky is drawn, not relit
+
+The source has no daytime sky. Its visible sky region is median luminance **0.0**, interquartile
+range 12.5 — essentially pure black. `art/sky.js` draws one instead: a dithered gradient, cloud
+from value noise, a horizon glow, and a sun bloom at the hours the sun is low enough to be in
+frame. Stars and the moon are held out of the base image entirely and composited back at whatever
+strength the hour calls for, because as the brightest paint in the scene they otherwise sit at the
+top of the tone curve and survive into broad daylight.
+
+### Checking it
 
 ```sh
-node art/relight.js --contrast     # IQR per class, source vs each frame
+node art/relight.js --report     # median luminance per material
+node art/relight.js --contrast   # detail kept, against the source
+node art/relight.js --seams      # edges where the source is flat - the regression test
 ```
 
-Read that against the source column. A class far below its source figure is being flattened; far
-above it is being over-sharpened.
-
-Mapping is by luminance, so every drawn detail survives and only the colour changes. Bounds come
-from the 2nd and 98th percentiles rather than min/max — one stray bright pixel in the mid-forest
-plane would otherwise set the ceiling and squash the whole plane into the bottom of its ramp. The
-night frame is passed through unmodified, so it is exactly the art as drawn.
-
-Three things that had to be handled specially, all found by looking rather than reasoning:
-
-- **Warm light is a change of hue, not of brightness.** Mixing a stop toward the sun colour after
-  setting its level also drags its luminance up toward the sun's — a canopy highlight meant for
-  luminance 39 landed at 123, which turned daylit foliage grey and dusty. Tint first, set the
-  brightness second.
-- **A sky is not a lit object.** Ramp width is per material (`SPREAD`): foliage and ground have
-  real shadow and get a wide ramp, but the sky is a smooth field of light and gets a narrow one.
-  Remapping the night sky's own structure faithfully — near-black at the zenith — gave a midday
-  sky that was navy at the top.
-- **Stars are painted into the sky and haze planes**, not just the stars plane, and survive into
-  daylight as white specks. At daylit times those planes go through a 3×3 **median filter**,
-  which is what removes salt-and-pepper noise exactly; an outlier-and-average test was tried
-  first and let stars through, because a star two pixels across drags its own local average up
-  and hides in it.
+`--seams` is the one that matters: it walks the rows where the old bands used to meet and reports
+the largest edge in the output where the *source* is flat. It was 3.7× before this pass and is
+1.10× after. If a future change puts it back above about 1.15, something has started lighting the
+same paint two different ways again.
 
 ```sh
 node art/relight.js && node tools/import-frames.js && node tools/gen-kotlin.js
 ```
 
-Edit the `TIMES` table at the top of `art/relight.js` to change how any time of day looks: each
-entry is `[target luminance, tint]`, plus a `sun` and `shade` for the frame. The source planes in
-`art/layers/` stay — they are the input, not dead weight.
+Edit `TONE` to change how bright a time of day is, and `TIMES` to change its colour: each material
+entry is `[tint, level trim]`, plus a `sun` and `shade` for the frame. Keep the trims near 1.0. The
+source planes in `art/layers/` stay — they are the input, and now also where depth comes from.
