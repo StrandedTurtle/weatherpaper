@@ -5,12 +5,12 @@ package com.sylcolabs.weatherpaper.scene
 import com.sylcolabs.weatherpaper.R
 
 /**
- * The scene, as one complete image per time of day.
+ * The scene, as one complete image per time of day and sky condition.
  *
  * Imported from art/frames/ by tools/import-frames.js, which are themselves relit from the
- * source planes by art/relight.js. The renderer cross-fades between the two frames either side
- * of the current time, wrapping past midnight, so every frame shares its geometry with the rest
- * and differs only in light.
+ * source planes by art/relight.js. Every frame shares its geometry with every other and differs
+ * only in light, so the renderer can blend freely across both axes - time of day, and how much
+ * cloud there is - without anything in the forest appearing to move.
  */
 internal object Frames {
 
@@ -20,23 +20,29 @@ internal object Frames {
     /** How the artwork sits in a screen of a different shape once scaled to cover. */
     const val ANCHOR_BOTTOM = true
 
-    /** @param phase position in the day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
-    class Frame(val name: String, val resId: Int, val phase: Float)
+    /**
+     * One time of day, in both sky conditions.
+     *
+     * @param phase position in the day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
+     */
+    class Frame(val name: String, val phase: Float, val clear: Int, val overcast: Int)
 
     /** Sorted by phase. */
     val ALL: Array<Frame> = arrayOf(
-        Frame("night", R.drawable.frame_night, 0.0f),
-        Frame("dawn", R.drawable.frame_dawn, 0.25f),
-        Frame("morning", R.drawable.frame_morning, 0.34f),
-        Frame("midday", R.drawable.frame_midday, 0.5f),
-        Frame("golden", R.drawable.frame_golden, 0.68f),
-        Frame("dusk", R.drawable.frame_dusk, 0.78f),
+        Frame("night", 0.0f, R.drawable.frame_night_clear, R.drawable.frame_night_overcast),
+        Frame("firstlight", 0.19f, R.drawable.frame_firstlight_clear, R.drawable.frame_firstlight_overcast),
+        Frame("dawn", 0.25f, R.drawable.frame_dawn_clear, R.drawable.frame_dawn_overcast),
+        Frame("morning", 0.34f, R.drawable.frame_morning_clear, R.drawable.frame_morning_overcast),
+        Frame("midday", 0.5f, R.drawable.frame_midday_clear, R.drawable.frame_midday_overcast),
+        Frame("golden", 0.68f, R.drawable.frame_golden_clear, R.drawable.frame_golden_overcast),
+        Frame("dusk", 0.78f, R.drawable.frame_dusk_clear, R.drawable.frame_dusk_overcast),
+        Frame("twilight", 0.86f, R.drawable.frame_twilight_clear, R.drawable.frame_twilight_overcast),
     )
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
     /**
-     * The two frames bracketing [phase], and how far between them we are.
+     * The two times bracketing [phase], and how far between them we are.
      *
      * Wraps past midnight, so the last frame of the day blends back into the first.
      */

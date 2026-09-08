@@ -31,6 +31,9 @@ internal object Effects {
     /** Drifting thicker patches in the fog. Each costs a few hundred rects, so this stays small. */
     private const val BANKS = 9
 
+    /** What the unlit part of the moon is painted out with: the night sky it sits in. */
+    private const val SHADOW = 0xFF0C1220.toInt()
+
     /** Ordered-dither thresholds. Breaks up alpha plateaus without going per-pixel. */
     private val BAYER = intArrayOf(
         0, 8, 2, 10,
@@ -239,6 +242,73 @@ internal object Effects {
                 }
             }
         }
+    }
+
+    /**
+     * How much of the moon-and-stars plane is showing, 0..1.
+     *
+     * Tracks the sun rather than the clock so it matches the frames, which fade the stars out
+     * across dawn and back in through twilight.
+     */
+    fun moonVisibility(st: SceneState): Float {
+        if (!SceneMeta.HAS_MOON) return 0f
+        val a = st.sunAltitude()
+        return 1f - smooth(-0.22f, 0.06f, a)
+    }
+
+    /**
+     * Carve the moon's phase out of the painted disc.
+     *
+     * The moon is drawn full in the artwork - it has to be, since one image cannot hold every
+     * night of the month - so the shadow is put back here. Without this every night of the year
+     * looks identical, which is the one thing a wallpaper driven by real data should never do.
+     *
+     * A pixel is lit when it falls on the sunward side of the terminator, whose x at each height
+     * is `cos(2*pi*phase) * sqrt(1 - y^2)`: the ellipse you see edge-on as the month turns. At
+     * new moon that lands on the disc's edge and nothing is lit; at full it lands on the far edge
+     * and all of it is.
+     *
+     * @param phase position in the synodic month, 0 and 1 new, 0.5 full.
+     */
+    fun carveMoonPhase(canvas: Canvas, phase: Float, strength: Float, b: RectF, unit: Float) {
+        if (!SceneMeta.HAS_MOON || strength <= 0f) return
+        val r = SceneMeta.MOON_R
+        if (r <= 0) return
+
+        val p = ((phase % 1f) + 1f) % 1f
+        val theta = (2.0 * Math.PI * p).toFloat()
+        val ct = kotlin.math.cos(theta.toDouble()).toFloat()
+        val waxing = p < 0.5f
+
+        paint.color = SHADOW
+        paint.alpha = (strength * 238f).roundToInt().coerceIn(0, 255)
+
+        // The disc is a handful of pixels across, so this is a few dozen tests - cheaper than any
+        // cleverness, and it never disagrees with the shape the artwork actually drew.
+        for (dy in -r..r) {
+            for (dx in -r..r) {
+                val nx = dx / (r + 0.5f)
+                val ny = dy / (r + 0.5f)
+                val d2 = nx * nx + ny * ny
+                if (d2 > 1f) continue                       // outside the disc
+                val edge = kotlin.math.sqrt((1f - ny * ny).coerceAtLeast(0f))
+                val terminator = ct * edge
+                val lit = if (waxing) nx > terminator else nx < terminator
+                if (lit) continue
+                block(
+                    canvas,
+                    b.left + (SceneMeta.MOON_X + dx) * unit,
+                    b.top + (SceneMeta.MOON_Y + dy) * unit,
+                    unit, unit,
+                )
+            }
+        }
+    }
+
+    private fun smooth(e0: Float, e1: Float, x: Float): Float {
+        if (e1 <= e0) return if (x >= e1) 1f else 0f
+        val t = ((x - e0) / (e1 - e0)).coerceIn(0f, 1f)
+        return t * t * (3f - 2f * t)
     }
 
     /**

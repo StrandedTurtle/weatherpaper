@@ -4,33 +4,31 @@ import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.graphics.Canvas
-import android.graphics.ColorMatrix
-import android.graphics.ColorMatrixColorFilter
 import android.graphics.Paint
 import android.graphics.Rect
 import android.graphics.RectF
-import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
 
 /**
- * Draws the scene: the time-of-day artwork, graded for cloud, with live weather over it.
+ * Draws the scene: the artwork for the current time and sky, with live weather over it.
  *
- * The artwork is a set of complete frames, each relit offline from the source planes by
- * art/relight.js. Lighting is therefore a property of the art rather than a filter applied at
- * runtime - a colour matrix cannot know that the sky wants to go blue while the canopy goes
- * green, which is why a single night image lifted toward day always read flat.
+ * The artwork is a grid of complete frames - eight times of day by two sky conditions - each
+ * relit offline from the source planes by art/relight.js. Lighting is a property of the art
+ * rather than a filter applied at runtime, because a filter cannot know that the sky wants to go
+ * blue while the canopy goes green, which is why a single night image lifted toward day always
+ * read flat.
  *
- * What is left at runtime is what genuinely has to be: which two frames to blend, how far
- * between them, and the weather on top.
+ * That applies to cloud as much as to the hour. Overcast used to be a saturation matrix over the
+ * clear-sky image, which is the same mistake one level down: it could dull the picture but it
+ * could not merge the painted clouds into a lid or fill in the shadows, which is what a cloudy
+ * day actually does. There is a real overcast frame for every time now, and the matrix is gone.
+ *
+ * What is left at runtime is only what has to be: which four frames surround the current state,
+ * how far between them we are, and the weather on top.
  */
 internal class SceneRenderer(private val context: Context) {
-
-    private var loIndex = -1
-    private var hiIndex = -1
-    private var loBitmap: Bitmap? = null
-    private var hiBitmap: Bitmap? = null
 
     private var screenW = 0
     private var screenH = 0
@@ -43,16 +41,61 @@ internal class SceneRenderer(private val context: Context) {
     private val src = Rect()
     private val dst = Rect()
 
-    private val basePaint = Paint().apply {
-        isFilterBitmap = false; isAntiAlias = false; isDither = false
-    }
-    private val blendPaint = Paint().apply {
+    private val blit = Paint().apply {
         isFilterBitmap = false; isAntiAlias = false; isDither = false
     }
     private val fill = Paint()
-    private var gradedFor = -1f
 
     val hasArt: Boolean get() = !Frames.isEmpty && Frames.WIDTH > 0 && Frames.HEIGHT > 0
+
+    // ---------------------------------------------------------------- frame cache
+    //
+    // At most four frames are ever in view at once, and which four changes a handful of times a
+    // day. A fixed four-slot cache with least-recently-used eviction therefore never thrashes,
+    // and holding only what is on screen costs far less than keeping all sixteen resident.
+
+    private val slotRes = IntArray(SLOTS) { 0 }
+    private val slotBmp = arrayOfNulls<Bitmap>(SLOTS)
+    private val slotUsed = LongArray(SLOTS)
+    private var clock = 0L
+
+    private val decodeOpts = BitmapFactory.Options().apply {
+        inScaled = false
+        inPreferredConfig = Bitmap.Config.ARGB_8888
+    }
+
+    private fun frame(resId: Int): Bitmap? {
+        if (resId == 0) return null
+        for (i in 0 until SLOTS) {
+            val b = slotBmp[i]
+            if (slotRes[i] == resId && b != null && !b.isRecycled) {
+                slotUsed[i] = ++clock
+                return b
+            }
+        }
+        var victim = 0
+        for (i in 0 until SLOTS) {
+            if (slotBmp[i] == null) { victim = i; break }
+            if (slotUsed[i] < slotUsed[victim]) victim = i
+        }
+        val decoded = runCatching {
+            BitmapFactory.decodeResource(context.resources, resId, decodeOpts)
+        }.getOrNull() ?: return null
+        slotBmp[victim]?.recycle()
+        slotBmp[victim] = decoded
+        slotRes[victim] = resId
+        slotUsed[victim] = ++clock
+        return decoded
+    }
+
+    fun release() {
+        for (i in 0 until SLOTS) {
+            slotBmp[i]?.recycle()
+            slotBmp[i] = null
+            slotRes[i] = 0
+            slotUsed[i] = 0
+        }
+    }
 
     fun resize(width: Int, height: Int) {
         screenW = width
@@ -74,64 +117,22 @@ internal class SceneRenderer(private val context: Context) {
         dst.set(left.roundToInt(), top.roundToInt(), (left + w).roundToInt(), (top + h).roundToInt())
     }
 
-    /**
-     * Only the two frames in view are held. The bracket shifts a handful of times a day, so
-     * re-decoding on the change costs far less than keeping every frame resident.
-     */
-    private fun ensureFrames(lo: Int, hi: Int) {
-        if (lo == loIndex && hi == hiIndex) return
-        val opts = BitmapFactory.Options().apply {
-            inScaled = false
-            inPreferredConfig = Bitmap.Config.ARGB_8888
-        }
-        fun decode(i: Int): Bitmap? =
-            runCatching { BitmapFactory.decodeResource(context.resources, Frames.ALL[i].resId, opts) }.getOrNull()
-
-        // Advancing through the day usually shifts hi into lo, so reuse rather than re-decode.
-        val newLo = if (lo == hiIndex) hiBitmap else if (lo == loIndex) loBitmap else decode(lo)
-        val newHi = if (hi == loIndex) loBitmap else if (hi == hiIndex) hiBitmap else decode(hi)
-        if (loBitmap !== newLo && loBitmap !== newHi) loBitmap?.recycle()
-        if (hiBitmap !== newLo && hiBitmap !== newHi) hiBitmap?.recycle()
-        loBitmap = newLo
-        hiBitmap = newHi
-        loIndex = lo
-        hiIndex = hi
-    }
-
-    /** Cloud drains colour and light. The one grade still worth doing at runtime. */
-    private fun grade(cloud: Float) {
-        if (abs(cloud - gradedFor) < 0.02f) return
-        gradedFor = cloud
-        if (cloud <= 0.02f) {
-            basePaint.colorFilter = null
-            blendPaint.colorFilter = null
-            return
-        }
-        val dim = 1f - 0.22f * cloud
-        val m = ColorMatrix().apply { setSaturation(1f - 0.55f * cloud) }
-        m.postConcat(ColorMatrix(floatArrayOf(
-            dim, 0f, 0f, 0f, 0f,
-            0f, dim, 0f, 0f, 0f,
-            0f, 0f, dim * 1.02f, 0f, 0f,   // a touch of blue left in, so overcast reads cold
-            0f, 0f, 0f, 1f, 0f,
-        )))
-        val filter = ColorMatrixColorFilter(m)
-        basePaint.colorFilter = filter
-        blendPaint.colorFilter = filter
-    }
-
-    fun release() {
-        loBitmap?.recycle()
-        if (hiBitmap !== loBitmap) hiBitmap?.recycle()
-        loBitmap = null
-        hiBitmap = null
-        loIndex = -1
-        hiIndex = -1
-    }
-
     /** True when something is moving, which is what decides whether a redraw loop is needed. */
     fun isAnimated(state: SceneState): Boolean =
         state.precip != Precipitation.NONE || state.thunder || state.condition == SkyCondition.FOG
+
+    /**
+     * How overcast the sky is, 0..1.
+     *
+     * Cloud cover is a fraction, but it does not read linearly: a quarter-covered sky still looks
+     * like a clear day and still casts shadows, and it is only well past half that the light
+     * actually changes character. Fog gets the overcast lighting outright - whatever the cover
+     * says, you are inside the cloud.
+     */
+    private fun overcastAmount(state: SceneState): Float {
+        if (state.condition == SkyCondition.FOG) return 1f
+        return smoothstep(0.28f, 0.94f, state.cloud.coerceIn(0f, 1f))
+    }
 
     fun render(
         canvas: Canvas,
@@ -146,20 +147,9 @@ internal class SceneRenderer(private val context: Context) {
         if (!hasArt) {
             drawPlaceholder(canvas)
         } else {
-            val (lo, hi, blend) = Frames.bracket(state.dayPhase())
-            ensureFrames(lo, hi)
-            grade(state.cloud)
-
             fill.color = BACKDROP
             canvas.drawRect(0f, 0f, screenW.toFloat(), screenH.toFloat(), fill)
-
-            basePaint.alpha = 255
-            loBitmap?.takeIf { !it.isRecycled }?.let { canvas.drawBitmap(it, src, dst, basePaint) }
-            if (blend > 0.004f) {
-                blendPaint.alpha = (blend * 255f).roundToInt().coerceIn(0, 255)
-                hiBitmap?.takeIf { !it.isRecycled }?.let { canvas.drawBitmap(it, src, dst, blendPaint) }
-            }
-
+            drawArtwork(canvas, state, timeMs)
             drawWeather(canvas, state, timeMs)
         }
 
@@ -167,6 +157,46 @@ internal class SceneRenderer(private val context: Context) {
         if (!locked) {
             Overlay.draw(canvas, state, overlay, bounds, if (hasArt) unit.toFloat() else placeholderUnit())
         }
+    }
+
+    /**
+     * Blend the four frames around the current time and cloud cover.
+     *
+     * The wanted result is the bilinear mix
+     *
+     *     (1-c)(1-b)·LoClear + (1-c)b·HiClear + c(1-b)·LoOvercast + c·b·HiOvercast
+     *
+     * and four ordinary source-over draws can hit it exactly, which is worth doing rather than
+     * approximating: painting the layers with alphas 1, b, c(1-b)/(1-cb) and cb leaves each image
+     * carrying precisely its own weight. That avoids compositing into an offscreen bitmap and the
+     * ~180 KB per copy that would cost.
+     */
+    private fun drawArtwork(canvas: Canvas, state: SceneState, timeMs: Long) {
+        val (lo, hi, b) = Frames.bracket(state.dayPhase())
+        val c = overcastAmount(state)
+
+        val denom = 1f - c * b
+        val aHiClear = b
+        val aLoOver = if (denom > 1e-4f) c * (1f - b) / denom else 0f
+        val aHiOver = c * b
+
+        paste(canvas, Frames.ALL[lo].clear, 1f)
+        paste(canvas, Frames.ALL[hi].clear, aHiClear)
+        paste(canvas, Frames.ALL[lo].overcast, aLoOver)
+        paste(canvas, Frames.ALL[hi].overcast, aHiOver)
+
+        // The moon is painted into the artwork as a full disc, so its phase is carved back out
+        // here. Only worth doing while it is actually visible and not behind cloud.
+        val moonlight = (1f - c) * Effects.moonVisibility(state)
+        if (moonlight > 0.02f) Effects.carveMoonPhase(canvas, state.moonPhase, moonlight, bounds, unit.toFloat())
+    }
+
+    private fun paste(canvas: Canvas, resId: Int, alpha: Float) {
+        if (alpha <= 0.004f) return
+        val bmp = frame(resId) ?: return
+        if (bmp.isRecycled) return
+        blit.alpha = (alpha * 255f).roundToInt().coerceIn(0, 255)
+        canvas.drawBitmap(bmp, src, dst, blit)
     }
 
     private fun drawWeather(canvas: Canvas, state: SceneState, timeMs: Long) {
@@ -213,6 +243,9 @@ internal class SceneRenderer(private val context: Context) {
     }
 
     private companion object {
+        /** Four frames surround any (time, cloud) point, so four slots never thrash. */
+        const val SLOTS = 4
+
         const val BACKDROP = 0xFF101314.toInt()
         const val RAIN = 0xFFBFD4DC.toInt()
         const val SNOW = 0xFFF2F8FA.toInt()

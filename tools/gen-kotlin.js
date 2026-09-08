@@ -22,18 +22,20 @@ const f = n => (Number.isInteger(n) ? n.toFixed(1) : String(n)) + 'f';
 const manifest = read('art/frames.json', { width: 0, height: 0, anchor: 'bottom', frames: [] });
 const frames = manifest.frames || [];
 
+const conditions = manifest.conditions || ['clear'];
+
 const framesKt = `${HEADER}
 ${PKG}
 
 import com.sylcolabs.weatherpaper.R
 
 /**
- * The scene, as one complete image per time of day.
+ * The scene, as one complete image per time of day and sky condition.
  *
  * Imported from art/frames/ by tools/import-frames.js, which are themselves relit from the
- * source planes by art/relight.js. The renderer cross-fades between the two frames either side
- * of the current time, wrapping past midnight, so every frame shares its geometry with the rest
- * and differs only in light.
+ * source planes by art/relight.js. Every frame shares its geometry with every other and differs
+ * only in light, so the renderer can blend freely across both axes - time of day, and how much
+ * cloud there is - without anything in the forest appearing to move.
  */
 internal object Frames {
 
@@ -43,18 +45,23 @@ internal object Frames {
     /** How the artwork sits in a screen of a different shape once scaled to cover. */
     const val ANCHOR_BOTTOM = ${manifest.anchor !== 'centre' && manifest.anchor !== 'center'}
 
-    /** @param phase position in the day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset. */
-    class Frame(val name: String, val resId: Int, val phase: Float)
+    /**
+     * One time of day, in both sky conditions.
+     *
+     * @param phase position in the day: 0 midnight, 0.25 sunrise, 0.5 noon, 0.75 sunset.
+     */
+    class Frame(val name: String, val phase: Float, val clear: Int, val overcast: Int)
 
     /** Sorted by phase. */
     val ALL: Array<Frame> = arrayOf(${frames.length === 0 ? ')' : '\n' +
-  frames.map(fr => `        Frame("${fr.name}", R.drawable.${fr.resource}, ${f(fr.phase)}),`).join('\n') +
+  frames.map(fr => `        Frame("${fr.name}", ${f(fr.phase)}, R.drawable.${fr.resources.clear}, ` +
+    `R.drawable.${fr.resources.overcast || fr.resources.clear}),`).join('\n') +
   '\n    )'}
 
     val isEmpty: Boolean get() = ALL.isEmpty()
 
     /**
-     * The two frames bracketing [phase], and how far between them we are.
+     * The two times bracketing [phase], and how far between them we are.
      *
      * Wraps past midnight, so the last frame of the day blends back into the first.
      */

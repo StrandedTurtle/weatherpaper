@@ -1,11 +1,11 @@
 'use strict';
 // Imports the time-of-day frames into the app.
 //
-//   art/frames/*.png  ->  art/frames.json + app resources
+//   art/frames/<time>-<condition>.png  ->  art/frames.json + app resources
 //
-// Each frame is a complete scene. The app cross-fades between the two frames either side of the
-// current time, so every frame must share the same dimensions AND the same geometry - only the
-// lighting should differ, or the forest visibly shifts as the day turns.
+// Each frame is a complete scene. The app blends across two axes - time of day and cloud - so
+// every frame must share the same dimensions AND the same geometry. Only the lighting may differ,
+// or the forest visibly shifts as the day turns or the weather closes in.
 const fs = require('fs');
 const path = require('path');
 const { decodePNG } = require('./png-decode.js');
@@ -15,16 +15,20 @@ const SRC = path.join(ROOT, 'art/frames');
 const RES = path.join(ROOT, 'app/src/main/res/drawable-nodpi');
 const MANIFEST = path.join(ROOT, 'art/frames.json');
 
+/** The cloud axis, driest first. The app blends along it as cover increases. */
+const CONDITIONS = ['clear', 'overcast'];
+
 /**
- * Where each frame sits in the day, as a fraction of a full cycle:
+ * Where each time sits in the day, as a fraction of a full cycle:
  * 0.00 midnight, 0.25 sunrise, 0.50 noon, 0.75 sunset. Wraps.
  */
 const DEFAULT_PHASE = {
-  night: 0.00, dawn: 0.25, morning: 0.34, midday: 0.50, golden: 0.68, dusk: 0.78,
+  night: 0.00, firstlight: 0.19, dawn: 0.25, morning: 0.34,
+  midday: 0.50, golden: 0.68, dusk: 0.78, twilight: 0.86,
 };
 
 const existing = fs.existsSync(MANIFEST) ? JSON.parse(fs.readFileSync(MANIFEST, 'utf8')) : { frames: [] };
-const prior = new Map((existing.frames || []).map(f => [f.source, f]));
+const prior = new Map((existing.frames || []).map(f => [f.name, f]));
 
 const files = fs.existsSync(SRC)
   ? fs.readdirSync(SRC).filter(f => f.toLowerCase().endsWith('.png')).sort()
@@ -35,7 +39,8 @@ if (fs.existsSync(RES)) {
 }
 
 if (files.length === 0) {
-  fs.writeFileSync(MANIFEST, JSON.stringify({ width: 0, height: 0, anchor: 'bottom', frames: [] }, null, 2) + '\n');
+  fs.writeFileSync(MANIFEST, JSON.stringify(
+    { width: 0, height: 0, anchor: 'bottom', conditions: CONDITIONS, frames: [] }, null, 2) + '\n');
   console.log('No PNGs in art/frames/ - nothing imported.');
   process.exit(0);
 }
@@ -43,11 +48,19 @@ if (files.length === 0) {
 fs.mkdirSync(RES, { recursive: true });
 
 let width = 0, height = 0;
-const frames = [];
+const byTime = new Map();
 const errors = [];
 
 for (const file of files) {
-  const name = file.replace(/\.png$/i, '').replace(/^\d+[-_ ]*/, '');
+  const stem = file.replace(/\.png$/i, '');
+  const dash = stem.lastIndexOf('-');
+  const time = dash < 0 ? stem : stem.slice(0, dash);
+  const cond = dash < 0 ? 'clear' : stem.slice(dash + 1);
+  if (!CONDITIONS.includes(cond)) {
+    errors.push(file + ': unknown condition "' + cond + '". Expected one of: ' + CONDITIONS.join(', '));
+    continue;
+  }
+
   let img;
   try {
     img = decodePNG(fs.readFileSync(path.join(SRC, file)));
@@ -62,18 +75,31 @@ for (const file of files) {
     continue;
   }
 
-  const p = prior.get(file) || {};
-  const phase = p.phase !== undefined ? p.phase
-    : DEFAULT_PHASE[name] !== undefined ? DEFAULT_PHASE[name] : null;
-  if (phase === null) {
-    errors.push(file + ': no day phase known for "' + name + '". Add a "phase" (0..1) for it in ' +
-      'art/frames.json, or name it one of: ' + Object.keys(DEFAULT_PHASE).join(', '));
+  const res = 'frame_' + (time + '_' + cond).toLowerCase().replace(/[^a-z0-9]+/g, '_');
+  fs.copyFileSync(path.join(SRC, file), path.join(RES, res + '.png'));
+  if (!byTime.has(time)) byTime.set(time, {});
+  byTime.get(time)[cond] = res;
+}
+
+const frames = [];
+for (const [time, resources] of byTime) {
+  const missing = CONDITIONS.filter(c => !resources[c]);
+  if (missing.length) {
+    // A time with only some conditions would blend into a hole, so this is fatal rather than
+    // silently substituted - the wrong frame appearing under cloud is far harder to diagnose.
+    errors.push(time + ': missing the ' + missing.join(' and ') + ' variant. Every time needs all ' +
+      CONDITIONS.length + ': ' + CONDITIONS.join(', '));
     continue;
   }
-
-  const res = 'frame_' + name.toLowerCase().replace(/[^a-z0-9]+/g, '_');
-  fs.copyFileSync(path.join(SRC, file), path.join(RES, res + '.png'));
-  frames.push({ source: file, name: name, resource: res, phase: phase });
+  const p = prior.get(time) || {};
+  const phase = p.phase !== undefined ? p.phase
+    : DEFAULT_PHASE[time] !== undefined ? DEFAULT_PHASE[time] : null;
+  if (phase === null) {
+    errors.push(time + ': no day phase known. Add a "phase" (0..1) for it in art/frames.json, ' +
+      'or name it one of: ' + Object.keys(DEFAULT_PHASE).join(', '));
+    continue;
+  }
+  frames.push({ name: time, phase: phase, resources: resources });
 }
 
 if (errors.length) {
@@ -86,15 +112,19 @@ frames.sort((a, b) => a.phase - b.phase);
 
 fs.writeFileSync(MANIFEST, JSON.stringify({
   _comment: 'Generated by tools/import-frames.js. phase is position in the day: 0 midnight, ' +
-    '0.25 sunrise, 0.5 noon, 0.75 sunset. The app cross-fades between adjacent frames, wrapping ' +
-    'past midnight. Edit phase by hand; it survives re-imports.',
+    '0.25 sunrise, 0.5 noon, 0.75 sunset. The app blends between adjacent times, wrapping past ' +
+    'midnight, and between conditions as cloud cover rises. Edit phase by hand; it survives ' +
+    're-imports.',
   width: width,
   height: height,
   anchor: existing.anchor || 'bottom',
+  conditions: CONDITIONS,
   frames: frames,
 }, null, 2) + '\n');
 
-console.log('imported ' + frames.length + ' frame(s) at ' + width + 'x' + height);
+console.log('imported ' + frames.length + ' time(s) x ' + CONDITIONS.length + ' condition(s) at ' +
+  width + 'x' + height);
 for (const f of frames) {
-  console.log('  phase ' + f.phase.toFixed(2) + '  ' + f.name.padEnd(10) + '-> ' + f.resource);
+  console.log('  phase ' + f.phase.toFixed(2) + '  ' + f.name.padEnd(11) +
+    '-> ' + CONDITIONS.map(c => f.resources[c]).join(', '));
 }

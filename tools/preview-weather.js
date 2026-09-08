@@ -22,9 +22,10 @@ function hash(i, salt) {
   return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
 }
 
-function Surface(rgba) {
+function Surface(pixels, packed) {
   const d = new Uint8Array(W * H * 3);
-  for (let i = 0; i < W * H; i++) for (let c = 0; c < 3; c++) d[i * 3 + c] = rgba[i * 4 + c];
+  if (packed) d.set(pixels);
+  else for (let i = 0; i < W * H; i++) for (let c = 0; c < 3; c++) d[i * 3 + c] = pixels[i * 4 + c];
   return {
     d: d,
     blend: function (x, y, col, a) {
@@ -43,16 +44,27 @@ function Surface(rgba) {
 
 const RAIN = [0xBF, 0xD4, 0xDC], SNOW = [0xF2, 0xF8, 0xFA], FOG = [0xB6, 0xC6, 0xC2];
 
-function grade(s, cloud) {
-  if (cloud <= 0.02) return;
-  const sat = 1 - 0.55 * cloud, dim = 1 - 0.22 * cloud;
+/**
+ * How overcast the sky is, 0..1 - mirrors SceneRenderer.overcastAmount.
+ *
+ * Cloud cover is a fraction, but it does not read linearly: a quarter-covered sky still looks
+ * like a clear day, and it is only well past half that the light changes character.
+ */
+function overcastAmount(cloud, isFog) {
+  if (isFog) return 1;
+  const t = Math.min(1, Math.max(0, (Math.min(1, Math.max(0, cloud)) - 0.28) / (0.94 - 0.28)));
+  return t * t * (3 - 2 * t);
+}
+
+/** Blend two frames of the same time, clear toward overcast. */
+function blendCondition(clearImg, overImg, c) {
+  const d = new Uint8Array(W * H * 3);
   for (let i = 0; i < W * H; i++) {
-    const r = s.d[i * 3], g = s.d[i * 3 + 1], b = s.d[i * 3 + 2];
-    const l = 0.213 * r + 0.715 * g + 0.072 * b;
-    s.d[i * 3] = Math.min(255, (l + (r - l) * sat) * dim);
-    s.d[i * 3 + 1] = Math.min(255, (l + (g - l) * sat) * dim);
-    s.d[i * 3 + 2] = Math.min(255, (l + (b - l) * sat) * dim * 1.02);
+    for (let k = 0; k < 3; k++) {
+      d[i * 3 + k] = Math.round(clearImg.rgba[i * 4 + k] * (1 - c) + overImg.rgba[i * 4 + k] * c);
+    }
   }
+  return d;
 }
 
 function line(s, x0, y0, x1, y1, thick, col, a) {
@@ -156,22 +168,23 @@ function fog(s, t, amount, wind) {
 }
 
 const CASES = [
-  { label: 'clear', frame: 'midday', cloud: 0.05, t: 3 },
-  { label: 'overcast', frame: 'midday', cloud: 0.95, t: 3 },
-  { label: 'drizzle', frame: 'midday', cloud: 0.7, rain: 0.3, wind: 0.2, t: 3.4 },
-  { label: 'rain+wind', frame: 'midday', cloud: 0.85, rain: 0.62, wind: 0.6, t: 5.1 },
-  { label: 'heavy rain', frame: 'dusk', cloud: 1.0, rain: 1.0, wind: 0.85, t: 7.7 },
-  { label: 'snow', frame: 'dawn', cloud: 0.6, snow: 0.7, wind: 0.25, t: 9.2 },
-  { label: 'fog', frame: 'morning', cloud: 0.5, fog: 0.85, wind: 0.05, t: 4.5 },
+  { label: 'clear', time: 'midday', cloud: 0.05, t: 3 },
+  { label: 'partly', time: 'midday', cloud: 0.55, t: 3 },
+  { label: 'overcast', time: 'midday', cloud: 0.98, t: 3 },
+  { label: 'drizzle', time: 'morning', cloud: 0.7, rain: 0.3, wind: 0.2, t: 3.4 },
+  { label: 'rain+wind', time: 'midday', cloud: 0.85, rain: 0.62, wind: 0.6, t: 5.1 },
+  { label: 'heavy rain', time: 'dusk', cloud: 1.0, rain: 1.0, wind: 0.85, t: 7.7 },
+  { label: 'snow', time: 'firstlight', cloud: 0.8, snow: 0.7, wind: 0.25, t: 9.2 },
+  { label: 'fog', time: 'morning', cloud: 0.5, fog: 0.85, wind: 0.05, t: 4.5 },
 ];
 
 const g = 2, OW = CASES.length * (W + g) + g, OH = H + g * 2;
 const out = new Uint8Array(OW * OH * 3).fill(28);
 
 CASES.forEach((c, i) => {
-  const img = decodePNG(fs.readFileSync(path.join(ROOT, 'art/frames', c.frame + '.png')));
-  const s = Surface(img.rgba);
-  grade(s, c.cloud || 0);
+  const clearImg = decodePNG(fs.readFileSync(path.join(ROOT, 'art/frames', c.time + '-clear.png')));
+  const overImg = decodePNG(fs.readFileSync(path.join(ROOT, 'art/frames', c.time + '-overcast.png')));
+  const s = Surface(blendCondition(clearImg, overImg, overcastAmount(c.cloud || 0, !!c.fog)), true);
   fog(s, c.t, c.fog || (c.rain ? 0.14 : 0), c.wind || 0);
   if (c.rain) rain(s, c.t, c.rain, c.wind || 0);
   if (c.snow) snow(s, c.t, c.snow, c.wind || 0);

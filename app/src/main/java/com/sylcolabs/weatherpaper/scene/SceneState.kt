@@ -99,7 +99,7 @@ internal data class SceneState(
             }
         }
 
-        /** Illuminated fraction of the moon, 0 new to 1 full, from a known new moon. */
+        /** Position in the synodic month, 0 and 1 new, 0.5 full, from a known new moon. */
         fun moonPhaseAt(millis: Long): Float {
             val synodic = 29.530588853
             val known = 947182440000.0 // 2000-01-06T18:14Z
