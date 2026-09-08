@@ -31,6 +31,11 @@ internal class PreviewView @JvmOverloads constructor(
      * property, and shadowing it here would silently resolve to the wrong thing.
      */
     var readout: OverlayConfig = OverlayConfig()
+
+    /** Mirrors the wallpaper's own setting, so the preview shows what will actually be drawn. */
+    var seasonalDetail: Boolean
+        get() = renderer.seasonalDetail
+        set(v) { renderer.seasonalDetail = v; invalidate() }
         set(v) { field = v; invalidate() }
 
     /** Called while the readout is dragged, with fractional coordinates. */

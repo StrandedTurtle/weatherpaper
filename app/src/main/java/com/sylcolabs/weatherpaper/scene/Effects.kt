@@ -34,6 +34,11 @@ internal object Effects {
     /** What the unlit part of the moon is painted out with: the night sky it sits in. */
     private const val SHADOW = 0xFF0C1220.toInt()
 
+    private const val MOTE = 0xFFDCE4C8.toInt()
+    private const val FIREFLY = 0xFFE8D060.toInt()
+    private const val LEAF_A = 0xFFC87A34.toInt()
+    private const val LEAF_B = 0xFFA1552A.toInt()
+
     /** Ordered-dither thresholds. Breaks up alpha plateaus without going per-pixel. */
     private val BAYER = intArrayOf(
         0, 8, 2, 10,
@@ -241,6 +246,84 @@ internal object Effects {
                     canvas.drawRect(px, py, px + cell, py + cell, paint)
                 }
             }
+        }
+    }
+
+    /**
+     * The season, as drifting particles rather than as art.
+     *
+     * Season was worked out from the date and the hemisphere and then never drawn - a whole axis
+     * of live data with nothing to show for it. Doing it properly in the frames would mean four
+     * sets of sixteen, near two megabytes, for a wallpaper whose whole point is being small. As
+     * particles it costs nothing in the APK and still reads immediately:
+     *
+     *   spring   pale motes on the air, seen against the dark trees
+     *   summer   fireflies, low over the clearing, and only after dark
+     *   autumn   leaves, tumbling rather than falling straight
+     *   winter   nothing added - the bare cold is the point, and when it snows that is weather
+     *
+     * @param night 0 in daylight, 1 after dark. Only summer reads it; fireflies in sunshine
+     *              would be nonsense.
+     */
+    fun seasonal(
+        canvas: Canvas, b: RectF, unit: Float, timeMs: Long,
+        season: Season, wind: Float, night: Float,
+    ) {
+        val t = timeMs / 1000f
+        val w = b.width()
+        val h = b.height()
+
+        when (season) {
+            Season.SPRING -> {
+                paint.color = MOTE
+                for (i in 0 until 22) {
+                    val drift = 5f + hash(i, 3) * 7f
+                    var x = hash(i, 11) * w + sin(t / (3f + hash(i, 13) * 4f) + i) * 5f * unit +
+                        wind * t * 12f
+                    x = ((x % w) + w) % w
+                    val y = (hash(i, 17) * h + t * drift) % h
+                    paint.alpha = ((44 + hash(i, 19) * 70f)).roundToInt()
+                    block(canvas, b.left + x, b.top + y, unit, unit)
+                }
+            }
+
+            Season.SUMMER -> {
+                if (night <= 0.05f) return
+                paint.color = FIREFLY
+                for (i in 0 until 16) {
+                    // Each blinks on its own period, and is dark for most of it - a field of
+                    // steady dots would read as noise, and it is the blinking that says insect.
+                    val period = 2.6f + hash(i, 23) * 2.8f
+                    val pulse = sin((t / period + hash(i, 29)) * 6.283f)
+                    if (pulse <= 0f) continue
+                    val x = ((hash(i, 31) * w + sin(t / (5f + hash(i, 37) * 5f) + i) * 7f * unit)
+                        % w + w) % w
+                    // Low over the clearing, where the undergrowth is, not up in the canopy.
+                    val y = h * (0.62f + hash(i, 41) * 0.30f) + sin(t / 3.4f + i * 2f) * 3f * unit
+                    paint.alpha = (pulse * pulse * 210f * night).roundToInt().coerceIn(0, 210)
+                    block(canvas, b.left + x, b.top + y, unit, unit)
+                }
+            }
+
+            Season.AUTUMN -> {
+                for (i in 0 until 20) {
+                    val g = hash(i, 43)
+                    paint.color = if (g > 0.55f) LEAF_A else LEAF_B
+                    val fall = 12f + hash(i, 47) * 14f
+                    val period = 1.6f + hash(i, 53) * 2.2f
+                    val swing = sin(t / period + hash(i, 59) * 6.283f)
+                    var x = hash(i, 61) * w + swing * 9f * unit + wind * t * 26f
+                    x = ((x % w) + w) % w
+                    val y = (hash(i, 67) * h + t * fall) % (h + 2f * unit)
+                    // A leaf turns as it falls, so it is alternately edge-on and face-on. One
+                    // pixel or two, off the same swing that moves it.
+                    val wide = if (abs(swing) > 0.55f) 2f * unit else unit
+                    paint.alpha = (120 + hash(i, 71) * 90f).roundToInt().coerceIn(0, 225)
+                    block(canvas, b.left + x, b.top + y, wide, unit)
+                }
+            }
+
+            Season.WINTER -> Unit
         }
     }
 

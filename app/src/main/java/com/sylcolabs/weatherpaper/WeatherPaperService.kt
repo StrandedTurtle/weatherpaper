@@ -76,6 +76,7 @@ class WeatherPaperService : WallpaperService() {
 
         override fun onSharedPreferenceChanged(sp: SharedPreferences?, key: String?) {
             overlay = prefs.overlay
+            renderer.seasonalDetail = prefs.seasonalDetail
             if (visible) drawFrame()
         }
 
@@ -84,6 +85,7 @@ class WeatherPaperService : WallpaperService() {
             if (visible) {
                 locked = keyguard?.isKeyguardLocked ?: false
                 overlay = prefs.overlay
+                renderer.seasonalDetail = prefs.seasonalDetail
                 // The only place weather is ever fetched: no background jobs, no wakeups.
                 repo.refreshIfStale { handler.post { if (this.visible) drawFrame() } }
                 drawFrame()
@@ -144,9 +146,13 @@ class WeatherPaperService : WallpaperService() {
          * Decide when - or whether - to draw again.
          *
          * Motion is a property of the weather, not of the artwork: the scene runs at [FRAME_MS]
-         * only while wind, precipitation or thunder is actually giving it something to do, and
+         * only while precipitation, thunder or fog is actually giving it something to do, and
          * drops straight back to still when that passes. On a calm clear day the wallpaper draws
          * once and then does nothing at all - which is the whole point of it.
+         *
+         * Seasonal particles are the one exception, and the only reason they are a setting:
+         * blossom and falling leaves keep drawing when the weather would not. Off, the guarantee
+         * above holds exactly.
          */
         private fun scheduleNext() {
             handler.removeCallbacks(drawRunnable)

@@ -120,10 +120,13 @@ passes 1 MB.
 
 - Nothing runs while the wallpaper is hidden.
 - **Motion is a property of the weather, not of the artwork.** The scene runs a ~12fps loop only
-  while wind, precipitation or thunder is actually giving it something to do, and drops straight
-  back to still when that passes. Below about 13 km/h the movement is under a third of an artwork
-  pixel, so it stays still. On a calm clear day the wallpaper draws once and then **stops entirely**
-  — or wakes once a minute if the clock is showing. Power-save forces static regardless.
+  while precipitation, thunder or fog is actually giving it something to do, and drops straight
+  back to still when that passes. On a calm clear day the wallpaper draws once and then
+  **stops entirely** — or wakes once a minute if the clock is showing. Power-save forces static
+  regardless.
+- **Seasonal detail is the one exception**, which is why it is a setting. Blossom, fireflies and
+  falling leaves keep the loop running when the weather would not. Turn it off and the guarantee
+  above holds exactly.
 - **No background work at all.** Weather is fetched only when the wallpaper becomes visible and
   the cached reading is over 30 minutes old. No jobs, no alarms, no wakeups. The last reading is
   persisted, so the first frame after a reboot is never blank.

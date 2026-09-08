@@ -43,6 +43,18 @@ internal class Prefs(context: Context) {
             .putBoolean(K_OV_24H, v.clock24)
             .apply()
 
+    // ---- scene ----
+    /**
+     * Whether seasonal particles are drawn - blossom, fireflies, falling leaves.
+     *
+     * It is a setting rather than always-on because it is the one thing that keeps the render
+     * loop running on an otherwise calm, clear day. Turn it off and the wallpaper goes back to
+     * drawing a single frame and then nothing at all.
+     */
+    var seasonalDetail: Boolean
+        get() = sp.getBoolean(K_SEASONAL, true)
+        set(v) = sp.edit().putBoolean(K_SEASONAL, v).apply()
+
     // ---- location ----
     /** True when the user has opted into following the device's coarse location. */
     var useDeviceLocation: Boolean
@@ -117,6 +129,7 @@ internal class Prefs(context: Context) {
         const val K_OV_TEMP = "ov_temp"; const val K_OV_COND = "ov_cond"
         const val K_OV_PLACE = "ov_place"; const val K_OV_X = "ov_x"
         const val K_OV_Y = "ov_y"; const val K_OV_SIZE = "ov_size"; const val K_OV_24H = "ov_24h"
+        const val K_SEASONAL = "seasonal"
         const val K_USE_GPS = "use_gps"; const val K_LAST_LAT = "last_lat"
         const val K_PLACE_NAME = "place_name"; const val K_PLACE_LAT = "place_lat"
         const val K_PLACE_LON = "place_lon"; const val K_PLACE_REGION = "place_region"

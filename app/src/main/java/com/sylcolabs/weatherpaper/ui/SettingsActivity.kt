@@ -68,6 +68,7 @@ class SettingsActivity : Activity() {
                 save()
             }
         }
+        preview.seasonalDetail = prefs.seasonalDetail
         root.addView(preview, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
         root.addView(caption(
             if (Frames.isEmpty) getString(R.string.no_art)
@@ -82,6 +83,16 @@ class SettingsActivity : Activity() {
         root.addView(check("Condition", readout.showCondition) { readout = readout.copy(showCondition = it); save() })
         root.addView(check("Location name", readout.showLocation) { readout = readout.copy(showLocation = it); save() })
         root.addView(sizeRow())
+
+        root.addView(heading("Scene"))
+        root.addView(check("Seasonal detail", prefs.seasonalDetail) {
+            prefs.seasonalDetail = it
+            preview.seasonalDetail = it
+        })
+        root.addView(caption(
+            "Blossom in spring, fireflies on summer nights, falling leaves in autumn. It is the " +
+                "only thing that keeps the wallpaper redrawing on a calm, clear day — turn it " +
+                "off and it draws once and then stops."))
 
         root.addView(heading("Location"))
         root.addView(check("Use my location", prefs.useDeviceLocation) { wanted ->

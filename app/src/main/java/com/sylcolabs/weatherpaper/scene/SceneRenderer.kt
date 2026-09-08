@@ -117,9 +117,25 @@ internal class SceneRenderer(private val context: Context) {
         dst.set(left.roundToInt(), top.roundToInt(), (left + w).roundToInt(), (top + h).roundToInt())
     }
 
+    /**
+     * Whether seasonal particles are drawn. Off restores the property that a calm, clear day
+     * costs nothing at all: it is the only thing here that moves without the weather moving.
+     */
+    var seasonalDetail = true
+
     /** True when something is moving, which is what decides whether a redraw loop is needed. */
-    fun isAnimated(state: SceneState): Boolean =
-        state.precip != Precipitation.NONE || state.thunder || state.condition == SkyCondition.FOG
+    fun isAnimated(state: SceneState): Boolean {
+        if (state.precip != Precipitation.NONE || state.thunder) return true
+        if (state.condition == SkyCondition.FOG) return true
+        return seasonalDetail && seasonMoves(state)
+    }
+
+    /** Winter adds nothing, and fireflies only exist after dark. */
+    private fun seasonMoves(state: SceneState): Boolean = when (state.season) {
+        Season.WINTER -> false
+        Season.SUMMER -> state.sunAltitude() < 0.06f
+        else -> true
+    }
 
     /**
      * How overcast the sky is, 0..1.
@@ -221,6 +237,12 @@ internal class SceneRenderer(private val context: Context) {
         // The lamp is the one light added rather than filtered, so it answers to the weather.
         val daylight = smoothstep(-0.10f, 0.45f, state.sunAltitude())
         Effects.drawWindows(canvas, Effects.windowGlow(state, daylight), bounds, u)
+
+        // Season, as particles. Suppressed while it is already precipitating - leaves and
+        // snowflakes in the same air just read as one confused mess.
+        if (seasonalDetail && state.precip == Precipitation.NONE) {
+            Effects.seasonal(canvas, bounds, u, timeMs, state.season, wind, 1f - daylight)
+        }
 
         if (state.thunder) Effects.flash(canvas, bounds, Effects.lightning(timeMs), LIGHTNING)
     }
